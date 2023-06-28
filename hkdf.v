@@ -2,15 +2,27 @@ module hkdf
 
 import crypto
 import crypto.hmac
+import crypto.sha1
 import crypto.sha256
+import crypto.sha512
 
 type HasherFn = crypto.Hash
 
 fn (h HasherFn) hmac_new(key []u8, data []u8) ![]u8 {
 	match h {
+		.sha1 {
+			blksize := sha1.block_size
+			res := hmac.new(key, data, sha1.sum, blksize)
+			return res
+		}
 		.sha256 {
 			blksize := sha256.block_size
 			res := hmac.new(key, data, sha256.sum, blksize)
+			return res
+		}
+		.sha512 {
+			blksize := sha512.block_size
+			res := hmac.new(key, data, sha512.sum512, blksize)
 			return res
 		}
 		else {
@@ -21,8 +33,14 @@ fn (h HasherFn) hmac_new(key []u8, data []u8) ![]u8 {
 
 fn (h HasherFn) size() !int {
 	match h {
+		.sha1 {
+			return sha1.size
+		}
 		.sha256 {
 			return sha256.size
+		}
+		.sha512 {
+			return sha512.size
 		}
 		else {
 			return error('unsupported hash')
