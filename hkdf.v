@@ -11,7 +11,7 @@ import crypto.sha512
 // but for this purpose, its limited to sha based hash.
 pub type HasherFn = crypto.Hash
 
-pub fn (h HasherFn) hmac_new(key []u8, data []u8) ![]u8 {
+fn (h HasherFn) hmac_new(key []u8, data []u8) ![]u8 {
 	match h {
 		.sha1 {
 			blksize := sha1.block_size
@@ -55,7 +55,7 @@ fn hmac_new(key []u8, data []u8, hfn HasherFn) ![]u8 {
 	return hfn.hmac_new(key, data)!
 }
 
-fn extract(slt []u8, ikm []u8, hfn HasherFn) ![]u8 {
+pub fn extract(slt []u8, ikm []u8, hfn HasherFn) ![]u8 {
 	if ikm.len == 0 {
 		return error('bad ikm')
 	}
