@@ -8,7 +8,7 @@ import crypto.sha512
 
 type HasherFn = crypto.Hash
 
-fn (h HasherFn) hmac_new(key []u8, data []u8) ![]u8 {
+pub fn (h HasherFn) hmac_new(key []u8, data []u8) ![]u8 {
 	match h {
 		.sha1 {
 			blksize := sha1.block_size
@@ -66,28 +66,28 @@ fn extract(slt []u8, ikm []u8, hfn HasherFn) ![]u8 {
 	return prk
 }
 
-fn expand(prk []u8, info []u8, length int, hfn HasherFn) ![]u8 {
+pub fn expand(prk []u8, info []u8, length int, hfn HasherFn) ![]u8 {
 	hash_len := hfn.size()!
 
 	if length > 255 * hash_len {
 		return error('Cannot expand to more than 255 * ${hash_len}')
 	}
 	ceil := if length % hash_len == 0 { 0 } else { 1 }
-	blocks_needed := length / hash_len + ceil
+	blk := length / hash_len + ceil
 	mut okm := []u8{}
-	mut output_block := []u8{}
-	for i := 0; i < blocks_needed; i++ {
-		output_block << info
+	mut ob := []u8{}
+	for i := 0; i < blk; i++ {
+		ob << info
 		ctr := i + 1
-		output_block << [u8(ctr)]
-		output_block = hmac_new(prk, output_block, hfn)!
+		ob << [u8(ctr)]
+		ob = hmac_new(prk, ob, hfn)!
 
-		okm << output_block
+		okm << ob
 	}
 	return okm[..length]
 }
 
-fn hkdf(salt []u8, ikm []u8, info []u8, length int, hfn HasherFn) ![]u8 {
+pub fn hkdf(salt []u8, ikm []u8, info []u8, length int, hfn HasherFn) ![]u8 {
 	// Key derivation function
 	prk := extract(salt, ikm, hfn)!
 	return expand(prk, info, length, hfn)
