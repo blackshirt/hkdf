@@ -6,7 +6,10 @@ import crypto.sha1
 import crypto.sha256
 import crypto.sha512
 
-type HasherFn = crypto.Hash
+// HasherFn is hashing function in standard library.
+// see https://modules.vlang.io/crypto.html#Hash
+// but for this purpose, its limited to sha based hash.
+pub type HasherFn = crypto.Hash
 
 pub fn (h HasherFn) hmac_new(key []u8, data []u8) ![]u8 {
 	match h {
