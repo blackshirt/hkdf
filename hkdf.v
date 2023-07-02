@@ -95,3 +95,61 @@ pub fn hkdf(salt []u8, ikm []u8, info []u8, length int, hfn HasherFn) ![]u8 {
 	prk := extract(salt, ikm, hfn)!
 	return expand(prk, info, length, hfn)
 }
+
+fn hkdf_expand_label(secret []u8, label string, context []u8, length int, hash HasherFn) ![]u8 {
+	hl := HKDFLabel{
+		length: length
+		label: label
+		context: context
+	}
+	info := hl.encode()
+	res := expand(secret, info, length, hfn)
+	return res
+}
+
+struct HKDFLabel {
+	length  int    // u16
+	label   string // ascii string
+	context []u8   // < 255 len
+}
+
+fn (hl HKDFLabel) encode() []u8 {
+	mut out := []u8{}
+	mut l := []u8{len: 2}
+	binary.big_endian_put_u16(mut l, u16(hl.length))
+	out << l
+
+	label_length := hl.label.bytes().len // fit in one byte
+	out << u8(label_length)
+	out << hl.label.bytes()
+
+	out << u8(hl.context.len)
+	out << hl.context
+
+	return out
+}
+
+fn hkdf_derive_secret(secret string, label string, msg []u8, hash HasherFn) ![]u8 {
+	context := hfn.hmac_new(secret, msg)
+	length := ctx.len
+
+	res := hkdf_expand_label(secret, label, context, length, hash)
+	return res
+}
+
+/*
+HKDF-Expand-Label(Secret, Label, Context, Length) =
+      HKDF-Expand(Secret, HkdfLabel, Length)
+Where HkdfLabel is specified as:
+
+
+
+struct {
+  uint16 length = Length;
+  opaque label<7..255> = "tls13 " + Label;
+  opaque context<0..255> = Context;
+} HkdfLabel;
+
+Derive-Secret(Secret, Label, Messages) = HKDF-Expand-Label(
+  Secret, Label, Transcript-Hash(Messages), Hash.length)
+*/
