@@ -331,9 +331,9 @@ fn test_hmac_new_sha256() {
 	]
 	// mut result := ''
 	for i, key in hkdf.keys {
-		hfn := crypto.Hash.sha256
+		hashfn := crypto.Hash.sha256
 
-		out := hmac_new(key, hkdf.data[i], hfn)!
+		out := hmac_new(key, hkdf.data[i], hashfn)!
 		result := out.hex()
 		assert result == sha256_expected_results[i]
 	}

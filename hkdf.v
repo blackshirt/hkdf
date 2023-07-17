@@ -5,13 +5,14 @@ import crypto.hmac
 import crypto.sha1
 import crypto.sha256
 import crypto.sha512
+import encoding.binary
 
-// HasherFn is hashing function in standard library.
+// Hasher is hashing function in standard library.
 // see https://modules.vlang.io/crypto.html#Hash
 // but for this purpose, its limited to sha based hash.
-pub type HasherFn = crypto.Hash
+pub type Hasher = crypto.Hash
 
-fn (h HasherFn) hmac_new(key []u8, data []u8) ![]u8 {
+fn (h Hasher) hmac_new(key []u8, data []u8) ![]u8 {
 	match h {
 		.sha1 {
 			blksize := sha1.block_size
@@ -34,7 +35,7 @@ fn (h HasherFn) hmac_new(key []u8, data []u8) ![]u8 {
 	}
 }
 
-fn (h HasherFn) size() !int {
+fn (h Hasher) size() !int {
 	match h {
 		.sha1 {
 			return sha1.size
@@ -51,26 +52,28 @@ fn (h HasherFn) size() !int {
 	}
 }
 
-fn hmac_new(key []u8, data []u8, hfn HasherFn) ![]u8 {
-	return hfn.hmac_new(key, data)!
+fn hmac_new(key []u8, data []u8, hashfn Hasher) ![]u8 {
+	return hashfn.hmac_new(key, data)!
 }
 
-pub fn extract(slt []u8, ikm []u8, hfn HasherFn) ![]u8 {
+pub fn extract(slt []u8, ikm []u8, hashfn Hasher) ![]u8 {
 	if ikm.len == 0 {
 		return error('bad ikm')
 	}
 
 	mut salt := slt.clone()
 	if salt.len == 0 {
-		salt = []u8{len: hfn.size()!, init: u8(0x00)}
+		salt = []u8{len: hashfn.size()!, init: u8(0x00)}
 	}
 
-	prk := hmac_new(salt, ikm, hfn)!
+	prk := hmac_new(salt, ikm, hashfn)!
 	return prk
 }
 
-pub fn expand(prk []u8, info []u8, length int, hfn HasherFn) ![]u8 {
-	hash_len := hfn.size()!
+// L is the length of output keying material in octets (<= 255*HashLen)
+// where HashLen denotes the length of the hash function output in octets
+pub fn expand(prk []u8, info []u8, length int, hashfn Hasher) ![]u8 {
+	hash_len := hashfn.size()!
 
 	if length > 255 * hash_len {
 		return error('Cannot expand to more than 255 * ${hash_len}')
@@ -83,29 +86,45 @@ pub fn expand(prk []u8, info []u8, length int, hfn HasherFn) ![]u8 {
 		ob << info
 		ctr := i + 1
 		ob << [u8(ctr)]
-		ob = hmac_new(prk, ob, hfn)!
+		ob = hmac_new(prk, ob, hashfn)!
 
 		okm << ob
 	}
 	return okm[..length]
 }
 
-pub fn hkdf(salt []u8, ikm []u8, info []u8, length int, hfn HasherFn) ![]u8 {
+pub fn hkdf(salt []u8, ikm []u8, info []u8, length int, hashfn Hasher) ![]u8 {
 	// Key derivation function
-	prk := extract(salt, ikm, hfn)!
-	return expand(prk, info, length, hfn)
+	prk := extract(salt, ikm, hashfn)!
+	return expand(prk, info, length, hashfn)
 }
 
-fn hkdf_expand_label(secret []u8, label string, context []u8, length int, hash HasherFn) ![]u8 {
+// RFC8446 7.1.  Key Schedule
+// https://datatracker.ietf.org/doc/html/rfc8446#section-7.1
+//
+// HKDF-Expand-Label(Secret, Label, Context, Length) =
+//      HKDF-Expand(Secret, HkdfLabel, Length)
+//
+
+// Transcript-Hash(M1, M2, ... Mn) = Hash(M1 || M2 || ... || Mn)
+
+fn hkdf_expand_label(secret []u8, label string, context []u8, length int, hashfn Hasher) ![]u8 {
+	outlabel := 'tls13 ' + label
 	hl := HKDFLabel{
 		length: length
-		label: label
+		label: outlabel
 		context: context
 	}
-	info := hl.encode()
-	res := expand(secret, info, length, hfn)
+	info := hl.encode()!
+	res := expand(secret, info, length, hashfn)!
 	return res
 }
+
+// struct {
+//   	uint16 length = Length;
+//     	opaque label<7..255> = "tls13 " + Label;
+//   	opaque context<0..255> = Context;
+// } HkdfLabel;
 
 struct HKDFLabel {
 	length  int    // u16
@@ -113,7 +132,7 @@ struct HKDFLabel {
 	context []u8   // < 255 len
 }
 
-fn (hl HKDFLabel) encode() []u8 {
+fn (hl HKDFLabel) encode() ![]u8 {
 	mut out := []u8{}
 	mut l := []u8{len: 2}
 	binary.big_endian_put_u16(mut l, u16(hl.length))
@@ -129,27 +148,13 @@ fn (hl HKDFLabel) encode() []u8 {
 	return out
 }
 
-fn hkdf_derive_secret(secret string, label string, msg []u8, hash HasherFn) ![]u8 {
-	context := hfn.hmac_new(secret, msg)
-	length := ctx.len
+// Derive-Secret(Secret, Label, Messages) =
+//     HKDF-Expand-Label(Secret, Label,  Transcript-Hash(Messages), Hash.length)
+//
+fn hkdf_derive_secret(secret []u8, label string, msg []u8, hashfn Hasher) ![]u8 {
+	context := hashfn.hmac_new(secret, msg)!
+	length := context.len
 
-	res := hkdf_expand_label(secret, label, context, length, hash)
+	res := hkdf_expand_label(secret, label, context, length, hashfn)!
 	return res
 }
-
-/*
-HKDF-Expand-Label(Secret, Label, Context, Length) =
-      HKDF-Expand(Secret, HkdfLabel, Length)
-Where HkdfLabel is specified as:
-
-
-
-struct {
-  uint16 length = Length;
-  opaque label<7..255> = "tls13 " + Label;
-  opaque context<0..255> = Context;
-} HkdfLabel;
-
-Derive-Secret(Secret, Label, Messages) = HKDF-Expand-Label(
-  Secret, Label, Transcript-Hash(Messages), Hash.length)
-*/
