@@ -183,15 +183,10 @@ fn HkdfLabel.decode(b []u8) !HkdfLabel {
 // Hasher
 pub fn (h Hasher) sum(data []u8) ![]u8 {
 	match h {
-		.sha256 {
-			return sha256.sum256(data)
-		}
-		.sha512 {
-			return sha512.sum512(data)
-		}
-		else {
-			return error('unsupported sum hasher')
-		}
+		.sha256 { return sha256.sum256(data) }
+		.sha384 { return sha512.sum384(data)]
+		.sha512 { return sha512.sum512(data) }
+		else { return error('unsupported sum hasher') }
 	}
 }
 
@@ -215,6 +210,11 @@ fn (h Hasher) create_hmac(key []u8, data []u8) ![]u8 {
 			res := hmac.new(key, data, sha256.sum, blksize)
 			return res
 		}
+		.sha384 {
+			blksize := sha512.block_size
+			res := hmac.new(key, data, sha512.sum384, blksize)
+			res
+		}
 		.sha512 {
 			blksize := sha512.block_size
 			res := hmac.new(key, data, sha512.sum512, blksize)
@@ -228,17 +228,10 @@ fn (h Hasher) create_hmac(key []u8, data []u8) ![]u8 {
 
 pub fn (h Hasher) size() !int {
 	match h {
-		.sha1 {
-			return sha1.size
-		}
-		.sha256 {
-			return sha256.size
-		}
-		.sha512 {
-			return sha512.size
-		}
-		else {
-			return error('unsupported hash')
-		}
+	        .sha1 { return sha1.size }
+		.sha256 { return sha256.size }
+		.sha384 { return sha512.size384 }
+		.sha512 { return sha512.size }
+		else { return error('unsupported hash') }
 	}
 }
