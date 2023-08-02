@@ -7,7 +7,7 @@ import crypto.sha1
 import crypto.sha256
 import crypto.sha512
 import encoding.binary
-import buffer
+import blackshirt.buffer
 
 // Hasher is hashing function in standard library.
 // see https://modules.vlang.io/crypto.html#Hash
@@ -33,6 +33,8 @@ pub fn (h Hkdf) hmac(key []u8, data []u8) ![]u8 {
 	return h.hasher.create_hmac(key, data)!
 }
 
+// extract create pseudorandom key (prk) from input given.
+// its output is hmac based hash with length (size) of Hashing checksum size
 pub fn (h Hkdf) extract(salt []u8, ikm []u8) ![]u8 {
 	mut inp := ikm.clone()
 	if inp.len == 0 {
@@ -49,7 +51,8 @@ pub fn (h Hkdf) extract(salt []u8, ikm []u8) ![]u8 {
 	return prk
 }
 
-// L is the length of output keying material in octets (<= 255*HashLen)
+// expand expand pseudorandom key to build output keying materi.
+// where length is the length of output keying material in octets (<= 255*HashLen)
 // where HashLen denotes the length of the hash function output in octets
 pub fn (h Hkdf) expand(prk []u8, info []u8, length int) ![]u8 {
 	hash_len := h.hasher.size()!
@@ -72,10 +75,9 @@ pub fn (h Hkdf) expand(prk []u8, info []u8, length int) ![]u8 {
 	return okm[..length]
 }
 
-// Support for HKDF-Expand-Label and other machinery for TLS 1.3
+// This add support for HKDF-Expand-Label and other machinery for TLS 1.3
 // from RFC8446 Section 7.1 Key Schedule and others.
 // see https://datatracker.ietf.org/doc/html/rfc8446#section-7.1
-
 // HKDF-Expand-Label(Secret, Label, Context, Length) =
 //      HKDF-Expand(Secret, HkdfLabel, Length)
 pub fn (h Hkdf) expand_label(secret []u8, label string, context []u8, length int) ![]u8 {
@@ -132,7 +134,8 @@ fn (hl HkdfLabel) verify() ! {
 	}
 }
 
-fn new_hkdf_label(label string, context []u8, length int) !HkdfLabel {
+// new_hkdf_label create new HkdfLabel
+pub fn new_hkdf_label(label string, context []u8, length int) !HkdfLabel {
 	hl := HkdfLabel{
 		length: length
 		label: label
@@ -180,7 +183,7 @@ fn HkdfLabel.decode(b []u8) !HkdfLabel {
 	return hklabel
 }
 
-// Hasher
+// sum return sum of the data from Hasher
 pub fn (h Hasher) sum(data []u8) ![]u8 {
 	match h {
 		.sha256 { return sha256.sum256(data) }
@@ -226,6 +229,7 @@ fn (h Hasher) create_hmac(key []u8, data []u8) ![]u8 {
 	}
 }
 
+// size return size of the checksum underlying hash
 pub fn (h Hasher) size() !int {
 	match h {
 		.sha1 { return sha1.size }
