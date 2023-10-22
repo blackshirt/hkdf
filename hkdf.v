@@ -1,12 +1,10 @@
 module hkdf
 
-import math
 import crypto
 import crypto.hmac
 import crypto.sha1
 import crypto.sha256
 import crypto.sha512
-import encoding.binary
 
 // HMAC based Key Derivation Function with crypto.Hash
 pub struct Hkdf {
