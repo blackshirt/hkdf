@@ -1,3 +1,6 @@
+# module hkdf
+
+
 # hkdf
  HMAC-based Extract-and-Expand Key Derivation Function (HKDF) in pure V Language.
  See [RFC 5869](https://datatracker.ietf.org/doc/html/rfc5869) for more detail.
@@ -119,3 +122,5 @@ fn (k Hkdf) derive_secret(secret []u8, label string, messages []u8) ![]u8
 Derive-Secret(Secret, Label, Messages) =     HKDF-Expand-Label(Secret, Label,  Transcript-Hash(Messages), Hash.length)
 
 [[Return to contents]](#Contents)
+
+#### Powered by vdoc. Generated on: 22 Oct 2023 07:25:33

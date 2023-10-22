@@ -150,12 +150,12 @@ fn test_hkdf_extract_expand_case_4() ! {
 	prk := hex.decode('9b6c18c432a7bf8f0e71c8eb88f4b30baa2ba243')!
 	okm := hex.decode('085a01ea1b10f36933068b56efa5ad81a4f14b822f5b091568a9cdd4f155fda2c22e422478d305f3f896')!
 
-	hasher := new(crypto.Hash.sha1)
-	prkout := hasher.extract(salt, ikm)!
+	kdf := new(crypto.Hash.sha1)
+	prkout := kdf.extract(salt, ikm)!
 
 	assert prk == prkout
 
-	okmout := hasher.expand(prkout, info, l)!
+	okmout := kdf.expand(prkout, info, l)!
 	assert okm == okmout
 }
 
