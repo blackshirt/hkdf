@@ -9,7 +9,7 @@ import crypto.sha512
 import encoding.binary
 
 // HMAC based Key Derivation Function with crypto.Hash
-struct Hkdf {
+pub struct Hkdf {
 	hash crypto.Hash = .sha256
 }
 
