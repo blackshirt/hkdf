@@ -7,7 +7,6 @@ import crypto.sha1
 import crypto.sha256
 import crypto.sha512
 import encoding.binary
-import blackshirt.buffer
 
 // HMAC based Key Derivation Function with crypto.Hash
 struct Hkdf {
@@ -102,29 +101,6 @@ pub fn (k Hkdf) extract(salt []u8, ikm []u8) ![]u8 {
 
 	prk := k.hmac(slt, inp)!
 	return prk
-}
-
-// actually Hkdf.expand() == Hkdf.expand_with_salt()
-pub fn (k Hkdf) expand_with_salt(salt []u8, ikm []u8, info []u8, length int) ![]u8 {
-	prk := k.extract(salt, ikm)!
-	hash_len := k.size()!
-
-	if length > 255 * hash_len {
-		return error('Cannot expand to more than 255 * ${hash_len}')
-	}
-	ceil := if length % hash_len == 0 { 0 } else { 1 }
-	blk := length / hash_len + ceil
-	mut okm := []u8{}
-	mut ob := []u8{}
-	for i := 0; i < blk; i++ {
-		ob << info
-		ctr := i + 1
-		ob << [u8(ctr)]
-		ob = k.hmac(prk, ob)!
-
-		okm << ob
-	}
-	return okm[..length]
 }
 
 // // expand expand pseudorandom key to build output keying materi.
