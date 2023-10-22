@@ -104,9 +104,7 @@ pub fn (k Hkdf) extract(salt []u8, ikm []u8) ![]u8 {
 	return prk
 }
 
-// expand expand pseudorandom key to build output keying materi.
-// where length is the length of output keying material in octets (<= 255*HashLen)
-// where HashLen denotes the length of the hash function output in octets
+// actually Hkdf.expand() == Hkdf.expand_with_salt()
 pub fn (k Hkdf) expand_with_salt(salt []u8, ikm []u8, info []u8, length int) ![]u8 {
 	prk := k.extract(salt, ikm)!
 	hash_len := k.size()!
@@ -129,10 +127,11 @@ pub fn (k Hkdf) expand_with_salt(salt []u8, ikm []u8, info []u8, length int) ![]
 	return okm[..length]
 }
 
-// actually Hkdf.expand() == Hkdf.expand_with_salt()
+// // expand expand pseudorandom key to build output keying materi.
+// where length is the length of output keying material in octets (<= 255*HashLen)
+// where HashLen denotes the length of the hash function output in octets
 pub fn (k Hkdf) expand(prk []u8, info []u8, length int) ![]u8 {
 	hash_len := k.size()!
-
 	if length > 255 * hash_len {
 		return error('Cannot expand to more than 255 * ${hash_len}')
 	}
@@ -149,111 +148,4 @@ pub fn (k Hkdf) expand(prk []u8, info []u8, length int) ![]u8 {
 		okm << ob
 	}
 	return okm[..length]
-}
-
-// struct {
-//      uint16 length = Length;
-//      opaque label<7..255> = 'tls13 ' + Label;
-//      opaque context<0..255> = Context;
-// } HkdfLabel;
-//
-// With common hash functions, any label longer than 12 characters
-// requires an additional iteration of the hash function to compute.
-// The labels in this specification have all been chosen to fit within
-// this limit.
-
-const (
-	max_hkdf_label_length   = 255
-	max_hkdf_context_length = 255
-)
-
-struct HkdfLabel {
-	length  int    // u16
-	label   string // ascii string
-	context []u8   // < 255 len
-}
-
-// This add support for HKDF-Expand-Label and other machinery for TLS 1.3
-// from RFC8446 Section 7.1 Key Schedule and others.
-// see https://datatracker.ietf.org/doc/html/rfc8446#section-7.1
-// HKDF-Expand-Label(Secret, Label, Context, Length) =
-//      HKDF-Expand(Secret, HkdfLabel, Length)
-//
-pub fn (k Hkdf) expand_label(secret []u8, label string, context []u8, length int) ![]u8 {
-	lbl := new_hkdf_label(label, context, length)!
-	hkdflabel := lbl.encode()!
-	out := k.expand(secret, hkdflabel, length)!
-	return out
-}
-
-// Derive-Secret(Secret, Label, Messages) =
-//     HKDF-Expand-Label(Secret, Label,  Transcript-Hash(Messages), Hash.length)
-pub fn (k Hkdf) derive_secret(secret []u8, label string, messages []u8) ![]u8 {
-	trc_hash := k.sum(messages)!
-	out := k.expand_label(secret, label, trc_hash, k.size()!)!
-	return out
-}
-
-fn (hl HkdfLabel) verify() ! {
-	if !hl.label.is_ascii() {
-		return error('HkdfLabel.label contains non-ascii string')
-	}
-	if hl.label.len > hkdf.max_hkdf_label_length {
-		return error('label.len exceed limit')
-	}
-	if hl.context.len > hkdf.max_hkdf_context_length {
-		return error('hkdf.context.len exceed limit')
-	}
-
-	if hl.length > math.max_u16 {
-		return error('hl.length exceed limit')
-	}
-}
-
-// new_hkdf_label create new HkdfLabel
-pub fn new_hkdf_label(label string, context []u8, length int) !HkdfLabel {
-	hl := HkdfLabel{
-		length: length
-		label: label
-		context: context
-	}
-	hl.verify()!
-	return hl
-}
-
-fn (hl HkdfLabel) encode() ![]u8 {
-	hl.verify()!
-	mut out := []u8{}
-
-	// writes hkdf length
-	mut ln := []u8{len: 2}
-	binary.big_endian_put_u16(mut ln, u16(hl.length))
-	out << ln
-
-	// writes label length
-	label_length := hl.label.bytes().len // should fit in one byte
-	out << u8(label_length)
-	out << hl.label.bytes()
-
-	out << u8(hl.context.len)
-	out << hl.context
-
-	return out
-}
-
-fn HkdfLabel.decode(b []u8) !HkdfLabel {
-	mut r := buffer.new_reader(b)
-	// read two bytes length
-	length := r.read_u16()!
-	// one byte label length
-	label_len := r.read_byte()!
-	// read label contents
-	label := r.read_at_least(int(label_len))!
-	// one byte context len
-	ctx_len := r.read_byte()!
-	// read context bytes
-	ctx := r.read_at_least(int(ctx_len))!
-
-	hklabel := new_hkdf_label(label.str(), ctx, int(length))!
-	return hklabel
 }
