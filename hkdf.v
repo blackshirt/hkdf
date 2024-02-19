@@ -10,12 +10,14 @@ import crypto.sha512
 // this is essentialy hash based functionality
 // The name of `Hash` already used as an enum in `crypto` module.
 interface Digest {
-	// size of output (in bytes) of this digest
+	// size returns fhe size of output (in bytes) of this digest produced
 	size() int
 mut:
+	// write updates internal states of the digest with data `b`
 	write(b []u8) !int
-	// checksumsum returns the `size()` checksum of digest with the data
+	// checksum returns `size()` bytes of this digest checksum
 	checksum() []u8
+	// reset resets underlying digest to default state
 	reset()
 }
 
@@ -40,6 +42,7 @@ fn new_digest(h crypto.Hash) !&Digest {
 // Fundamentally its a Digest with `create_hmac` capabilityt
 // besides embedded Digest interfaces
 interface HMAC {
+	Digest
 	// id represents hash identity of this hmac
 	id() crypto.Hash
 	create_hmac(key []u8, info []u8) ![]u8
@@ -52,17 +55,33 @@ struct Hmac {
 	
 fn new_hmac(h crypto.Hash) !&HMAC {
 	d := new_digest(h)!
-	hm := &Hmac{
+	m := &Hmac{
 		d: d
 		h: h
 	}
-	return hm
+	return m
 }
 
-fn (hm Hmac) id() crypto.Hash {
-	return hm.h
+fn (m Hmac) id() crypto.Hash {
+	return m.h
 }
 
+fn (m Hmac) size() int {
+	return m.d.size()
+}
+
+fn (mut m Hmac) write(b []u8) !int {
+	return m.d.write(b)
+}
+
+fn (mut m Hmac) checksum() []u8 {
+	return m.d.checksum()
+}
+
+fn (mut m Hmac) reset() {
+	m.d.reset()
+}
+	
 fn (hm Hmac) create_mac(key []u8, info []u8) []u8 {
 	return error("not implemented")
 }
