@@ -10,29 +10,78 @@ import crypto.sha512
 // this is essentialy hash based functionality
 // The name of `Hash` already used as an enum in `crypto` module.
 interface Digest {
-	io.Writer
-	hash() crypto.Hash
 	// size of output (in bytes) of this digest
 	size() int
-	block_size() int
-	// sum returns the `size()` checksum of digest with the data
-	sum() []u8
+mut:
+	write(b []u8) !int
+	// checksumsum returns the `size()` checksum of digest with the data
+	checksum() []u8
 	reset()
 }
 
+fn new_digest(h crypto.Hash) !&Digest {
+	match h {
+		.sha256 {
+			return sha256.new()
+		}
+		.sha384 {
+			returnsha512.new384()
+		}
+		.sha512 {
+			return sha512.new()
+		}
+		else {
+			return error("unsuppprted hash")
+		}
+	}
+}
+	
 // HMAC describes hash based message authentication code (MAC)
-// Its provides 2 convenient methods defined on them
+// Fundamentally its a Digest with `create_hmac` capabilityt
 // besides embedded Digest interfaces
 interface HMAC {
 	Digest
 	create_hmac(key []u8, info []u8) []u8
 }
-		
-// HMAC based Key Derivation Function with crypto.Hash
-pub struct Hkdf {
-	hash crypto.Hash = .sha256
+
+// HMAC based Key Derivation Function interface
+interface HKDF {
+	HMAC
+	extract(salt []u8, keymaterial []u8) []u8
+	expand(key []u8, info []u8, exp_length int) []u8 
 }
 
+	
+// HMAC based Key Derivation Function with crypto.Hash
+struct Hkdf {
+	d Digest
+	h crypto.Hash = .sha256
+}
+
+fn new_hkdf(h crypto.Hash) !&HKDF {
+	return &Hkdf{
+		d: new_digest(h)
+		h: h
+	}
+}
+
+fn (k Hkdf) hash() crypto.Hash {
+	return k.h
+}
+
+fn (k Hkdf) write(b []u8) !int {
+	return k.d
+}
+	
+fn (k Hkdf) size() !int {
+	match k.hash {
+		.sha256 { return sha256.size }
+		.sha384 { return sha512.size384 }
+		.sha512 { return sha512.size }
+		else { return error('unsupported hash') }
+	}
+}
+			
 pub fn new(h crypto.Hash) &Hkdf {
 	return &Hkdf{
 		hash: h
