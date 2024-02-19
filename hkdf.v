@@ -1,11 +1,28 @@
 module hkdf
 
+import io
 import crypto
 import crypto.hmac
 import crypto.sha1
 import crypto.sha256
 import crypto.sha512
 
+// this is essentialy hash based functionality
+// The name of `Hash` already used as an enum in `crypto` module.
+interface Digester {
+	io.Writer
+	// size of output (in bytes) of this digest
+	size() int
+	block_size() int
+	// sum returns the `size()` checksum of digest with the data
+	sum(b []u8) []u8
+}
+
+interface Hmac {
+	hasher crypto.Hash
+	create_hmac()
+}
+		
 // HMAC based Key Derivation Function with crypto.Hash
 pub struct Hkdf {
 	hash crypto.Hash = .sha256
