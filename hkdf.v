@@ -9,18 +9,23 @@ import crypto.sha512
 
 // this is essentialy hash based functionality
 // The name of `Hash` already used as an enum in `crypto` module.
-interface Digester {
+interface Digest {
 	io.Writer
+	hash() crypto.Hash
 	// size of output (in bytes) of this digest
 	size() int
 	block_size() int
 	// sum returns the `size()` checksum of digest with the data
-	sum(b []u8) []u8
+	sum() []u8
+	reset()
 }
 
-interface Hmac {
-	hasher crypto.Hash
-	create_hmac()
+// HMAC describes hash based message authentication code (MAC)
+// Its provides 2 convenient methods defined on them
+// besides embedded Digest interfaces
+interface HMAC {
+	Digest
+	create_hmac(key []u8, info []u8) []u8
 }
 		
 // HMAC based Key Derivation Function with crypto.Hash
