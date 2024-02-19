@@ -40,10 +40,33 @@ fn new_digest(h crypto.Hash) !&Digest {
 // Fundamentally its a Digest with `create_hmac` capabilityt
 // besides embedded Digest interfaces
 interface HMAC {
-	Digest
-	create_hmac(key []u8, info []u8) []u8
+	// id represents hash identity of this hmac
+	id() crypto.Hash
+	create_hmac(key []u8, info []u8) ![]u8
 }
 
+struct Hmac {
+	d Digest
+	h crypto.Hash
+}
+	
+fn new_hmac(h crypto.Hash) !&HMAC {
+	d := new_digest(h)!
+	hm := &Hmac{
+		d: d
+		h: h
+	}
+	return hm
+}
+
+fn (hm Hmac) id() crypto.Hash {
+	return hm.h
+}
+
+fn (hm Hmac) create_mac(key []u8, info []u8) []u8 {
+	return error("not implemented")
+}
+	
 // HMAC based Key Derivation Function interface
 interface HKDF {
 	HMAC
@@ -54,13 +77,13 @@ interface HKDF {
 	
 // HMAC based Key Derivation Function with crypto.Hash
 struct Hkdf {
-	d Digest
+	m HMAC
 	h crypto.Hash = .sha256
 }
 
 fn new_hkdf(h crypto.Hash) !&HKDF {
 	return &Hkdf{
-		d: new_digest(h)
+		m: new_hmac(h)
 		h: h
 	}
 }
