@@ -98,13 +98,13 @@ fn (m Hmac) create_hmac(key []u8, data []u8) ![]u8 {
 		b_key << npad[..blocksize - b_key.len]
 	}
 	mut inner := []u8{}
-	for i, b in hmac.ipad[..blocksize] {
+	for i, b in ipad[..blocksize] {
 		inner << b_key[i] ^ b
 	}
 	inner << data
 	// inner_hash := hash_func(inner)
 	m.d.reset()
-	m.d.write(inner) or { panic(err) }
+	_ := m.d.write(inner) !
 	inner_hash := m.d.checksum()
 		
 	mut outer := []u8{cap: b_key.len}
@@ -114,7 +114,7 @@ fn (m Hmac) create_hmac(key []u8, data []u8) ![]u8 {
 	outer << inner_hash
 	// digest := hash_func(outer)
 	m.d.reset()
-	m.d.write(outer) !
+	_ := m.d.write(outer) !
 	digest := m.d.checksum()
 		
 	return digest
