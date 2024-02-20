@@ -6,11 +6,23 @@ import crypto.hmac
 import crypto.sha1
 import crypto.sha256
 import crypto.sha512
+import crypto.internal.subtle
 
-// this is essentialy hash based functionality
+const ipad = []u8{len: 256, init: 0x36} // TODO is 256 enough??
+
+const opad = []u8{len: 256, init: 0x5C}
+const npad = []u8{len: 256, init: 0}
+	
+// Digest represents hash based object.
 // The name of `Hash` already used as an enum in `crypto` module.
 interface Digest {
-	// size returns fhe size of output (in bytes) of this digest produced
+	// id returns identity of this Digest, for comparable thing.
+	// FIX: builtin standard cryptographic hash not implemented `id()` parts
+	id() crypto.Hash
+	// block_size return size of the Digest block operates on.
+	// Is this makes sense with non-block based Digest ? is there any guide on this topic ?
+	block_size() int 
+	// size returns fhe size of output (in bytes) of this Digest produced
 	size() int
 mut:
 	// write updates internal states of the digest with data `b`
@@ -21,16 +33,21 @@ mut:
 	reset()
 }
 
-fn new_digest(h crypto.Hash) !&Digest {
+fn new_digest(h crypto.Hash, key []u8, size int) !&Digest {
+	// many standard hash module in crypto modules accepts differents params
+	// and implemented in non interchangeable way
 	match h {
 		.sha256 {
 			return sha256.new()
 		}
 		.sha384 {
-			returnsha512.new384()
+			return sha512.new384()
 		}
 		.sha512 {
 			return sha512.new()
+		}
+		.blake2b_256 {
+			// accepts key, bytes
 		}
 		else {
 			return error("unsuppprted hash")
@@ -42,8 +59,6 @@ fn new_digest(h crypto.Hash) !&Digest {
 // Fundamentally its a Digest with `create_hmac` capabilityt
 // besides embedded Digest interfaces
 interface HMAC {
-	// id represents identity of this hmac
-	id() crypto.Hash
 	// digest returns underlying Digest
 	digest() Digest
 	// create_hmac build new hmac message from key and info bytes
@@ -52,28 +67,57 @@ interface HMAC {
 
 struct Hmac {
 	d Digest
-	h crypto.Hash
 }
 	
-fn new_hmac(h crypto.Hash) !&HMAC {
-	d := new_digest(h)!
+fn new_hmac(d Digest) !&HMAC {
 	m := &Hmac{
 		d: d
-		h: h
 	}
 	return m
-}
-
-fn (m Hmac) id() crypto.Hash {
-	return m.h
 }
 
 fn (m Hmac) digest() Digest {
 	return m.d
 }
 	
-fn (m Hmac) create_hmac(key []u8, info []u8) []u8 {
-	return error("not implemented")
+fn (m Hmac) create_hmac(key []u8, data []u8) []u8 {
+	// copied from `crypto.hmac.new` for sake of comparability
+	mut b_key := []u8{}
+	blocksize := m.d.block_size()
+	if key.len <= blocksize {
+		b_key = key.clone() // 
+	} else {
+		// replaces hash_func with Digest based
+		// first, we reset it before usage
+		m.d.reset()
+		_ := m.d.write(key) or { panic(err) }
+		b_key = m.d.checksum()
+		// b_key = hash_func(key)
+	}
+	if b_key.len < blocksize {
+		b_key << npad[..blocksize - b_key.len]
+	}
+	mut inner := []u8{}
+	for i, b in hmac.ipad[..blocksize] {
+		inner << b_key[i] ^ b
+	}
+	inner << data
+	// inner_hash := hash_func(inner)
+	m.d.reset()
+	m.d.write(inner) or { panic(err) }
+	inner_hash := m.d.checksum()
+		
+	mut outer := []u8{cap: b_key.len}
+	for i, b in opad[..blocksize] {
+		outer << b_key[i] ^ b
+	}
+	outer << inner_hash
+	// digest := hash_func(outer)
+	m.d.reset()
+	m.d.write(outer) or { panic(err) }
+	digest := m.d.checksum()
+		
+	return digest
 }
 	
 // HMAC based Key Derivation Function interface
