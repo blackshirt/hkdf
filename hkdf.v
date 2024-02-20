@@ -62,7 +62,7 @@ interface HMAC {
 	// digest returns underlying Digest
 	digest() Digest
 	// create_hmac build new hmac message from key and info bytes
-	create_hmac(key []u8, info []u8) ![]u8
+	create_hmac(key []u8, data []u8) ![]u8
 }
 
 struct Hmac {
@@ -80,7 +80,7 @@ fn (m Hmac) digest() Digest {
 	return m.d
 }
 	
-fn (m Hmac) create_hmac(key []u8, data []u8) []u8 {
+fn (m Hmac) create_hmac(key []u8, data []u8) ![]u8 {
 	// copied from `crypto.hmac.new` for sake of comparability
 	mut b_key := []u8{}
 	blocksize := m.d.block_size()
@@ -90,7 +90,7 @@ fn (m Hmac) create_hmac(key []u8, data []u8) []u8 {
 		// replaces hash_func with Digest based
 		// first, we reset it before usage
 		m.d.reset()
-		_ := m.d.write(key) or { panic(err) }
+		_ := m.d.write(key) !
 		b_key = m.d.checksum()
 		// b_key = hash_func(key)
 	}
@@ -114,29 +114,27 @@ fn (m Hmac) create_hmac(key []u8, data []u8) []u8 {
 	outer << inner_hash
 	// digest := hash_func(outer)
 	m.d.reset()
-	m.d.write(outer) or { panic(err) }
+	m.d.write(outer) !
 	digest := m.d.checksum()
 		
 	return digest
 }
 	
-// HMAC based Key Derivation Function interface
+// HMAC based Key Derivation Function (HKDF) interface
 interface HKDF {
 	hmac() HMAC
 	extract(salt []u8, keymaterial []u8) []u8
-	expand(key []u8, info []u8, exp_length int) []u8 
+	expand(key []u8, data []u8, exp_length int) []u8 
 }
 
 // HMAC based Key Derivation Function with crypto.Hash
 struct Hkdf {
 	m HMAC
-	h crypto.Hash = .sha256
 }
 
-fn new_hkdf(h crypto.Hash) !&HKDF {
+fn new_hkdf(d Digest) !&HKDF {
 	return &Hkdf{
-		m: new_hmac(h)
-		h: h
+		m: new_hmac(d)!
 	}
 }
 
@@ -144,103 +142,50 @@ fn (k Hkdf) hmac() HMAC {
 	return k.m
 }
 
-fn (k Hkdf) extract(salt []u8, keymaterial []u8) ![]u8 {
-	return error("not implemented")	
+fn (k Hkdf) extract(salt_ []u8, keym_ []u8) ![]u8 {
+	d := k.m.digest()
+	mut keymaterial := []u8{}
+	if keym_.len == 0 {
+		keymaterial << []u8{len: d.size()}
+	} else {
+		keymaterial << keym_
+	}
+
+	mut salt := []u8{}
+	if salt_.len == 0 {
+		salt << []u8{len: d.size()}
+	} else {
+		// use provided salt_ params
+		salt << salt_
+	}
+
+	prk := k.m.create_hmac(salt, keymaterial)!
+	return prk	
 }
 
 fn (k Hkdf) expand(key []u8, info []u8, exp_length int) ![]u8 {
-	return error("not implemented")	
+	hash_len := k.m.digest().size()!
+	if exp_length > 255 * hash_len {
+		return error('Cannot expand to more than 255 * ${hash_len}')
+	}
+	ceil := if exp_length % hash_len == 0 { 0 } else { 1 }
+	blk := exp_length / hash_len + ceil
+	// output keying material
+	mut okm := []u8{} 
+	mut ob := []u8{}
+	for i := 0; i < blk; i++ {
+		ob << info
+		ctr := i + 1
+		ob << [u8(ctr)]
+		ob = k.m.create_hmac(prk, ob)!
+
+		okm << ob
+	}
+	return okm[..exp_length]	
 }
+
+/*
 	
-fn (k Hkdf) hash() crypto.Hash {
-	return k.h
-}
-
-fn (k Hkdf) write(b []u8) !int {
-	return k.d
-}
-	
-fn (k Hkdf) size() !int {
-	match k.hash {
-		.sha256 { return sha256.size }
-		.sha384 { return sha512.size384 }
-		.sha512 { return sha512.size }
-		else { return error('unsupported hash') }
-	}
-}
-			
-pub fn new(h crypto.Hash) &Hkdf {
-	return &Hkdf{
-		hash: h
-	}
-}
-
-pub fn (k Hkdf) hasher() crypto.Hash {
-	return k.hash
-}
-
-// sum return sum of the data for Hkdf hash
-pub fn (k Hkdf) sum(data []u8) ![]u8 {
-	match k.hash {
-		.sha256 { return sha256.sum256(data) }
-		.sha384 { return sha512.sum384(data) }
-		.sha512 { return sha512.sum512(data) }
-		else { return error('unsupported sum hasher') }
-	}
-}
-
-fn (k Hkdf) create_hmac(key []u8, data []u8) ![]u8 {
-	match k.hash {
-		.sha1 {
-			// .sha1 is considerd as deprecated, so placed it in $if block,
-			// used only for testing and debug purposes.
-			// run with `$v -cg -stats test the_test.v`
-			$if test {
-				$if debug {
-					blksize := sha1.block_size
-					res := hmac.new(key, data, sha1.sum, blksize)
-					return res
-				}
-			}
-			return error('run it in test and debug mode')
-		}
-		.sha256 {
-			blksize := sha256.block_size
-			res := hmac.new(key, data, sha256.sum, blksize)
-			return res
-		}
-		.sha384 {
-			blksize := sha512.block_size
-			res := hmac.new(key, data, sha512.sum384, blksize)
-			return res
-		}
-		.sha512 {
-			blksize := sha512.block_size
-			res := hmac.new(key, data, sha512.sum512, blksize)
-			return res
-		}
-		else {
-			return error('unsupported hash')
-		}
-	}
-}
-
-// size return size of the checksum underlying hash
-pub fn (k Hkdf) size() !int {
-	match k.hash {
-		.sha1 { return sha1.size }
-		.sha256 { return sha256.size }
-		.sha384 { return sha512.size384 }
-		.sha512 { return sha512.size }
-		else { return error('unsupported hash') }
-	}
-}
-
-// hmac create new hmac
-pub fn (k Hkdf) hmac(key []u8, data []u8) ![]u8 {
-	return k.create_hmac(key, data)!
-}
-
 // extract create pseudorandom key (prk) from input given.
 // its output is hmac based hash with length (size) of Hashing checksum size
 pub fn (k Hkdf) extract(salt []u8, ikm []u8) ![]u8 {
@@ -281,3 +226,4 @@ pub fn (k Hkdf) expand(prk []u8, info []u8, length int) ![]u8 {
 	}
 	return okm[..length]
 }
+*/
