@@ -27,8 +27,8 @@ interface Digest {
 mut:
 	// write updates internal states of the digest with data `b`
 	write(b []u8) !int
-	// checksum returns `size()` bytes of this digest checksum
-	checksum() []u8
+	// digest returns `size()` bytes of this Digest hash
+	digest() []u8
 	// reset resets underlying digest to default state
 	reset()
 }
@@ -105,7 +105,7 @@ fn (m Hmac) create_hmac(key []u8, data []u8) ![]u8 {
 	// inner_hash := hash_func(inner)
 	m.d.reset()
 	_ := m.d.write(inner) !
-	inner_hash := m.d.checksum()
+	inner_hash := m.d.sum([])
 		
 	mut outer := []u8{cap: b_key.len}
 	for i, b in opad[..blocksize] {
@@ -115,7 +115,7 @@ fn (m Hmac) create_hmac(key []u8, data []u8) ![]u8 {
 	// digest := hash_func(outer)
 	m.d.reset()
 	_ := m.d.write(outer) !
-	digest := m.d.checksum()
+	digest := m.d.sum([])
 		
 	return digest
 }
