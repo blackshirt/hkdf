@@ -4,6 +4,8 @@
 
  ## Contents
 - [new](#new)
+- [expand](#expand)
+- [extract](#extract)
 - [Hkdf](#Hkdf)
   - [hasher](#hasher)
   - [sum](#sum)
@@ -13,10 +15,24 @@
   - [expand](#expand)
 
 ## new
+new creates a new instance of Hkdf with hash h
 ```v
 fn new(h crypto.Hash) &Hkdf
 ```
 
+## expand
+expand expands pseudorandom key to build output keying material using underlying crypto.Hash
+prk was a pseudorandom key of at least HashLen octets (usually, the output from the extract step)
+info is optional context and application specific information (can be a zero-length string)
+```v
+pub fn expand(h crypto.Hash, prk []u8, info []u8, length int) ![]u8
+```
+
+## extract
+extract generates a pseudorandom key for use with Expand from an input secret and an optional independent salt.
+```v
+pub fn extract(h crypto.Hash, salt []u8, ikm []u8) ![]u8
+```
 
 [[Return to contents]](#Contents)
 
