@@ -11,6 +11,7 @@ module hkdf
 import crypto
 import crypto.hmac
 import crypto.sha1
+import crypto.sha3
 import crypto.sha256
 import crypto.sha512
 
@@ -20,8 +21,15 @@ import crypto.sha512
 // Some crypto libraries limit it into 1024-bytes and or 2048-bytes size.
 const max_info_size = 2048 // 2 KB
 
+// minimum size of xof-based hash output, in bytes
+const min_xof_outsize = 1
+
+// maximum size of xof-based hash output, in bytes
+const max_xof_outsize = 4096
+
 // supported_hash is a list of supported hash algorithms used across of HKDF operation.
-const supported_hash = [crypto.Hash.sha1, .sha256, .sha384, .sha512]
+const supported_hash = [crypto.Hash.sha1, .sha224, .sha256, .sha384, .sha3_224, .sha3_256, .sha3_384,
+	.sha3_512, .sha512, .sha512_224, .sha512_256, .shake128, .shake256]
 
 // extract generates a pseudorandom key for use with expand operation.
 // Its takes form an input secret and an optional independent salt.
@@ -73,11 +81,36 @@ pub interface HKDF {
 @[noinit]
 struct DefaultHKDF implements HKDF {
 mut:
-	// h is an underlying hash used on HKDF operation, set on creation
+	// h is an underlying hash used on HKDF operation, set on creation. Currently its
+	// support for fixed-output hash and variable-length output size on the xof-based hash.
+	// If you pass correct options for XOF-based hash, its turns the variable-length
+	// output of xof-based hash into fixed-one by storing the output size on the
+	// xof_outsize field.
 	h crypto.Hash = .sha256
-	// xof_size is the size of output of Extendable-output function (XOF)-based hash.
+	// xof_support flag to tell this implementation support for xof-based hash.
+	// Its should be set into true for allowing xof-based hash and underlying hash
+	// algorithm h should represent a xof-based hash.
+	// NOTE: this is experimental features, use with care and cautions.
+	xof_support bool
+	// xof_outsize is the size of output of Extendable-output function (XOF)-based hash.
 	// Its used to support xof-based hash output.
-	xof_size int
+	xof_outsize int
+}
+
+// set_xof_outsize sets the size of underlying XOF-based hash output.
+fn (mut d DefaultHKDF) set_xof_outsize(size int) ! {
+	// error on unsupported flag, ie, xof_support was false
+	if !d.xof_support { return error('This HKDF was not support for xof-based hash') }
+	if d.xof_support {
+		if size < min_xof_outsize {
+			return error('size below the low limit of xof size')
+		}
+		if size > max_xof_outsize {
+			return error('size exceed the limit of allowed xof size')
+		}
+		// sets it up
+		d.xof_outsize = size
+	}
 }
 
 // HKDFConfig was an option opaque to drive the HKDF creation and or operation.
@@ -85,8 +118,10 @@ mut:
 @[params]
 pub struct HKDFConfig {
 pub mut:
-	// for XOF-based hash
-	xof_outlen int
+	// support to pass flag for an experimental xof-based hash
+	xof_support bool
+	// for XOF-based hash, tells the size of the xof output
+	xof_outsize int
 }
 
 // new creates a new default HKDF implementation with provided hash h
@@ -108,14 +143,15 @@ pub fn new(h crypto.Hash, opt HKDFConfig) !&DefaultHKDF {
 // strong Pseudorandom Key (prk) bytes reduced into a fixed-length output.
 @[direct_array_access]
 pub fn (d &DefaultHKDF) extract(salt []u8, ikm []u8) ![]u8 {
-	// if salt was zeros length, it is set to .hash_length zeros-bytes instead.
+	// if salt was zeros length bytes, it would be set to .hash_length zeros-bytes instead.
 	// Otherwise, use the provided salt bytes as is.
 	new_salt := if salt.len == 0 {
 		[]u8{len: d.hash_length(), init: u8(0x00)}
 	} else {
 		salt
 	}
-	// like the salt, if ikm was zeros length, its set to hash_length zeros-bytes instead.
+	// similar to the salt part, if ikm was zeros length bytes,
+	// its would be set to hash_length zeros-bytes instead.
 	// Otherwise, use the provided ikm bytes as is
 	new_ikm := if ikm.len == 0 {
 		[]u8{len: d.hash_length(), init: u8(0x00)}
@@ -188,6 +224,7 @@ pub fn (d &DefaultHKDF) hash_length() int {
 //
 
 // create_hmac builds HMAC output from the current key and message data.
+@[direct_array_access]
 fn (d &DefaultHKDF) create_hmac(key []u8, data []u8) ![]u8 {
 	match d.h {
 		// NOTE: SHA1 was considered as a deprecated and marked as insecure.
@@ -203,8 +240,31 @@ fn (d &DefaultHKDF) create_hmac(key []u8, data []u8) ![]u8 {
 		.sha512 {
 			return hmac.new(key, data, sha512.sum512, sha512.block_size)
 		}
+		// NOTE: this code parts was not tested, and acts as an experimental
+		// support for xof-based hash. Its not recommended to use xof-based
+		// on hmac construction.
+		.shake128 {
+			cb := fn [d] (msg []u8) []u8 {
+				xofout := sha3.shake128(msg, d.xof_outsize)
+				return xof_callback(xofout)
+			}
+			return hmac.new(key, data, cb, sha3.xof_rate_128)
+		}
+		.shake256 {
+			cb := fn [d] (msg []u8) []u8 {
+				xofout := sha3.shake256(msg, d.xof_outsize)
+				return xof_callback(xofout)
+			}
+			return hmac.new(key, data, cb, sha3.xof_rate_256)
+		}
 		else {
 			return error('unsupported hash')
 		}
 	}
+}
+
+// little hack to allow xof-based hash used in hkdf construction
+@[direct_array_access; inline]
+fn xof_callback(data []u8) []u8 {
+	return data
 }
