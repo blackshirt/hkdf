@@ -80,7 +80,7 @@ mut:
 	xof_size int
 }
 
-// HKDFConfig was a option opaque to drive the HKDF creation and or operation.
+// HKDFConfig was an option opaque to drive the HKDF creation and or operation.
 // Currently, only used for XOF-based hash backend.
 @[params]
 pub struct HKDFConfig {
@@ -187,7 +187,7 @@ pub fn (d &DefaultHKDF) hash_length() int {
 // Helpers
 //
 
-// create_hmac builds HMAC output from the current key and data.
+// create_hmac builds HMAC output from the current key and message data.
 fn (d &DefaultHKDF) create_hmac(key []u8, data []u8) ![]u8 {
 	match d.h {
 		// NOTE: SHA1 was considered as a deprecated and marked as insecure.
