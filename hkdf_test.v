@@ -1,10 +1,18 @@
+// Copyright © 2025 blackshirt.
+// Use of this source code is governed by an MIT license
+// that can be found in the LICENSE file.
+//
 module hkdf
 
 import crypto
 import encoding.hex
 
+// Test Vectors from the standard doc.
+//
+// This appendix provides test vectors for SHA-256 and SHA-1 hash functions
+
 // see https://datatracker.ietf.org/doc/html/rfc5869#appendix-A.1
-fn test_hkdf_extract_expand_case_1() ! {
+fn test_hkdf_operation_case_1() ! {
 	// Basic test case with SHA-256
 
 	// Hash = SHA-256
@@ -39,7 +47,7 @@ fn test_hkdf_extract_expand_case_1() ! {
 }
 
 // https://datatracker.ietf.org/doc/html/rfc5869#appendix-A.2
-fn test_hkdf_extract_expand_case_2() ! {
+fn test_hkdf_operation_case_2() ! {
 	/*
 	Test with SHA-256 and longer inputs/outputs
 
@@ -96,7 +104,7 @@ fn test_hkdf_extract_expand_case_2() ! {
 }
 
 // https://datatracker.ietf.org/doc/html/rfc5869#appendix-A.3
-fn test_hkdf_extract_expand_case_3() ! {
+fn test_hkdf_operation_case_3() ! {
 	/*
 	Test with SHA-256 and zero-length salt/info
 
@@ -121,21 +129,21 @@ fn test_hkdf_extract_expand_case_3() ! {
 	okm :=
 		hex.decode('8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8')!
 
-	kdf := new(crypto.Hash.sha256)!
-	prkout := kdf.extract(salt, ikm)!
+	k := new(crypto.Hash.sha256)!
+	prkout := k.extract(salt, ikm)!
 
 	assert prk == prkout
 	// with extract
 	assert prk == extract(.sha256, salt, ikm)!
 
-	okmout := kdf.expand(prkout, info, l)!
+	okmout := k.expand(prkout, info, l)!
 	assert okm == okmout
 	// with expand
 	assert okm == expand(.sha256, prkout, info, l)!
 }
 
 // https://datatracker.ietf.org/doc/html/rfc5869#appendix-A.4
-fn test_hkdf_extract_expand_case_4() ! {
+fn test_hkdf_operation_case_4() ! {
 	/*
 	Basic test case with SHA-1
 
@@ -159,21 +167,21 @@ fn test_hkdf_extract_expand_case_4() ! {
 	okm :=
 		hex.decode('085a01ea1b10f36933068b56efa5ad81a4f14b822f5b091568a9cdd4f155fda2c22e422478d305f3f896')!
 
-	kdf := new(crypto.Hash.sha1)!
+	k := new(crypto.Hash.sha1)!
 
-	prkout := kdf.extract(salt, ikm)!
+	prkout := k.extract(salt, ikm)!
 	assert prk == prkout
 	// with extract
 	assert prk == extract(.sha1, salt, ikm)!
 
-	okmout := kdf.expand(prkout, info, l)!
+	okmout := k.expand(prkout, info, l)!
 	assert okm == okmout
 	// with expand
 	assert okm == expand(.sha1, prkout, info, l)!
 }
 
 // https://datatracker.ietf.org/doc/html/rfc5869#appendix-A.5
-fn test_hkdf_extract_expand_case_5() ! {
+fn test_hkdf_operation_case_5() ! {
 	/*
 	Test with SHA-1 and longer inputs/outputs
 
@@ -229,7 +237,7 @@ fn test_hkdf_extract_expand_case_5() ! {
 }
 
 // https://datatracker.ietf.org/doc/html/rfc5869#appendix-A.6
-fn test_hkdf_extract_expand_case_6() ! {
+fn test_hkdf_operation_case_6() ! {
 	/*
 	Test with SHA-1 and zero-length salt/info
 
@@ -254,20 +262,20 @@ fn test_hkdf_extract_expand_case_6() ! {
 	okm :=
 		hex.decode('0ac1af7002b3d761d1e55298da9d0506b9ae52057220a306e07b6b87e8df21d0ea00033de03984d34918')!
 
-	kdf := new(crypto.Hash.sha1)!
-	prkout := kdf.extract(salt, ikm)!
+	k := new(crypto.Hash.sha1)!
+	prkout := k.extract(salt, ikm)!
 	assert prk == prkout
 	// with extract
 	assert prk == extract(.sha1, salt, ikm)!
 
-	okmout := kdf.expand(prkout, info, length)!
+	okmout := k.expand(prkout, info, length)!
 	assert okm == okmout
 	// with expand
 	assert okm == expand(.sha1, prkout, info, length)!
 }
 
 // https://datatracker.ietf.org/doc/html/rfc5869#appendix-A.7
-fn test_hkdf_extract_expand_case_7() ! {
+fn test_hkdf_operation_case_7() ! {
 	/*
 	Test with SHA-1, salt not provided (defaults to HashLen zero octets),
    zero-length info
@@ -292,13 +300,13 @@ fn test_hkdf_extract_expand_case_7() ! {
 	okm :=
 		hex.decode('2c91117204d745f3500d636a62f64f0ab3bae548aa53d423b0d1f27ebba6f5e5673a081d70cce7acfc48')!
 
-	kdf := new(crypto.Hash.sha1)!
-	prkout := kdf.extract(salt, ikm)!
+	k := new(crypto.Hash.sha1)!
+	prkout := k.extract(salt, ikm)!
 	assert prk == prkout
 	// with extract
 	assert prk == extract(.sha1, salt, ikm)!
 
-	okmout := kdf.expand(prkout, info, l)!
+	okmout := k.expand(prkout, info, l)!
 	assert okm == okmout
 	// with expand
 	assert okm == expand(.sha1, prkout, info, l)!

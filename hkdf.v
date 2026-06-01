@@ -2,7 +2,8 @@
 // Use of this source code is governed by an MIT license
 // that can be found in the LICENSE file.
 //
-// This module implements HMAC-based Extract-and-Expand Key Derivation Function (HKDF) as defined in RFC 5869.
+// This module implements HMAC-based Extract-and-Expand Key Derivation Function (HKDF)
+// as defined in RFC 5869. See https://datatracker.ietf.org/doc/html/rfc5869 for details.
 // HKDF is a cryptographic key derivation function (KDF) with the goal of expanding limited input
 // keying material into one or more cryptographically strong secret keys.
 module hkdf
@@ -13,18 +14,20 @@ import crypto.sha1
 import crypto.sha256
 import crypto.sha512
 
-// max_info_size is the maximum size (on this library) of info parameter input, in bytes.
+// max_info_size is the limit size (on this library) of the info parameter input, in bytes.
 // Under the specification, there is no formal byte-size limit for the info parameter.
 // It can theoretically be any length, but we limit it to prevent memory exhaustion.
 // Some crypto libraries limit it into 1024-bytes and or 2048-bytes size.
-const max_info_size = 4096
+const max_info_size = 2048 // 2 KB
 
 // supported_hash is a list of supported hash algorithms used across of HKDF operation.
 const supported_hash = [crypto.Hash.sha1, .sha256, .sha384, .sha512]
 
-// extract generates a pseudorandom key for use with Expand from an input secret and an optional independent salt.
-pub fn extract(h crypto.Hash, salt []u8, ikm []u8) ![]u8 {
-	k := new(h)!
+// extract generates a pseudorandom key for use with expand operation.
+// Its takes form an input secret and an optional independent salt.
+// The hash algorithm used as a backend of operation supplied in h parameter.
+pub fn extract(h crypto.Hash, salt []u8, ikm []u8, opt HKDFConfig) ![]u8 {
+	k := new(h, opt)!
 	return k.extract(salt, ikm)!
 }
 
@@ -32,18 +35,18 @@ pub fn extract(h crypto.Hash, salt []u8, ikm []u8) ![]u8 {
 // strong subkeys or keying material of any desired length. An underlying hash algorithm used to do
 // the expand operation was supplied in h parameter. It also uses an optional info context
 // to ensure the derived keys are strictly bound to their intended purpose.
-pub fn expand(h crypto.Hash, prk []u8, info []u8, length int) ![]u8 {
-	k := new(h)!
+pub fn expand(h crypto.Hash, prk []u8, info []u8, length int, opt HKDFConfig) ![]u8 {
+	k := new(h, opt)!
 	return k.expand(prk, info, length)!
 }
 
-// HKDF is a key derivation function (KDF) based on the HMAC message authentication code
+// HKDF is a key derivation function (KDF) based on the HMAC message authentication code.
 pub interface HKDF {
-	// hash_length returns the size of the underlying hash-backend algorithm output
-	// used across on this HKDF instance.
+	// hash_length tells the output's size of the underlying hash algorithm backend
+	// used on this HKDF instance.
 	hash_length() int
 
-	// HKDF-Extract(salt, IKM) -> PRK
+	// extract performs HKDF-Extract(salt, IKM) -> PRK
 	// Inputs:
 	//  salt     optional salt value (a non-secret random value);
 	//           if not provided, it is set to a string of HashLen zeros.
@@ -53,7 +56,7 @@ pub interface HKDF {
 	//  PRK      a pseudorandom key (of HashLen octets)
 	extract(salt []u8, ikm []u8) ![]u8
 
-	// HKDF-Expand(PRK, info, L) -> OKM
+	// expand performs HKDF-Expand(PRK, info, L) -> OKM
 	// Inputs:
 	//    PRK    a pseudorandom key of at least HashLen octets
 	//           (usually, the output from the extract step)
@@ -73,13 +76,15 @@ mut:
 	// h is an underlying hash used on HKDF operation, set on creation
 	h crypto.Hash = .sha256
 	// xof_size is the size of output of Extendable-output function (XOF)-based hash.
-	// Its used to support xof-based hash output	
+	// Its used to support xof-based hash output.
 	xof_size int
 }
 
+// HKDFConfig was a option opaque to drive the HKDF creation and or operation.
+// Currently, only used for XOF-based hash backend.
 @[params]
-struct HKDFConfig {
-mut:
+pub struct HKDFConfig {
+pub mut:
 	// for XOF-based hash
 	xof_outlen int
 }
