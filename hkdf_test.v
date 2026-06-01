@@ -215,14 +215,14 @@ fn test_hkdf_extract_expand_case_5() ! {
 	okm :=
 		hex.decode('0x0bd770a74d1160f7c9f12cd5912a06ebff6adcae899d92191fe4305673ba2ffe8fa3f1a4e5ad79f3f334b3b202b2173c486ea37ce3d397ed034c7f9dfeb15c5e927336d0441f4c4300e2cff0d0900b52d3b4')!
 
-	kdf := new(crypto.Hash.sha1)!
+	k := new(crypto.Hash.sha1)!
 
-	prkout := kdf.extract(salt, ikm)!
+	prkout := k.extract(salt, ikm)!
 	assert prk == prkout
 	// with extract
 	assert prk == extract(.sha1, salt, ikm)!
 
-	okmout := kdf.expand(prkout, info, l)!
+	okmout := k.expand(prkout, info, l)!
 	assert okm == okmout
 	// with expand
 	assert okm == expand(.sha1, prkout, info, l)!

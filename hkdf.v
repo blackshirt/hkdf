@@ -13,56 +13,47 @@ import crypto.sha1
 import crypto.sha256
 import crypto.sha512
 
+// max_info_size is the maximum size (on this library) of info parameter input, in bytes.
+// Under the specification, there is no formal byte-size limit for the info parameter.
+// It can theoretically be any length, but we limit it to prevent memory exhaustion.
+// Some crypto libraries limit it into 1024-bytes and or 2048-bytes size.
+const max_info_size = 4096
+
+// supported_hash is a list of supported hash algorithms used across of HKDF operation.
 const supported_hash = [crypto.Hash.sha1, .sha256, .sha384, .sha512]
 
-@[direct_array_access]
-pub fn expand(h crypto.Hash, prk []u8, info []u8, length int) ![]u8 {
-	k := new(h)!
-	return k.expand(prk, info, length)!
-}
-
-// Extract generates a pseudorandom key for use with Expand from an input secret and an optional independent salt.
-@[direct_array_access]
+// extract generates a pseudorandom key for use with Expand from an input secret and an optional independent salt.
 pub fn extract(h crypto.Hash, salt []u8, ikm []u8) ![]u8 {
 	k := new(h)!
 	return k.extract(salt, ikm)!
 }
 
-// HMAC: Keyed-Hashing for Message Authentication
-//
-// See https://datatracker.ietf.org/doc/html/rfc2104
-interface HMAC {
-	new(key []u8, data []u8, h crypto.Hash) ![]u8
+// expand takes and expands a fixed-length pseudorandom key prk into multiple cryptographically
+// strong subkeys or keying material of any desired length. An underlying hash algorithm used to do
+// the expand operation was supplied in h parameter. It also uses an optional info context
+// to ensure the derived keys are strictly bound to their intended purpose.
+pub fn expand(h crypto.Hash, prk []u8, info []u8, length int) ![]u8 {
+	k := new(h)!
+	return k.expand(prk, info, length)!
 }
 
-interface HKDF {
-	// hash_length returns the size of the underlying hash output
+// HKDF is a key derivation function (KDF) based on the HMAC message authentication code
+pub interface HKDF {
+	// hash_length returns the size of the underlying hash-backend algorithm output
+	// used across on this HKDF instance.
 	hash_length() int
 
 	// HKDF-Extract(salt, IKM) -> PRK
-	//
-	// Options:
-	//  Hash     a hash function; HashLen denotes the length of the
-	//         hash function output in octets
-	//
 	// Inputs:
 	//  salt     optional salt value (a non-secret random value);
-	//         if not provided, it is set to a string of HashLen zeros.
-	// IKM      input keying material
+	//           if not provided, it is set to a string of HashLen zeros.
+	//  IKM      input keying material
 	//
 	// Output:
 	//  PRK      a pseudorandom key (of HashLen octets)
-	//
-	// The output PRK is calculated as follows:
-	//
-	// PRK = HMAC-Hash(salt, IKM)
 	extract(salt []u8, ikm []u8) ![]u8
 
 	// HKDF-Expand(PRK, info, L) -> OKM
-	//
-	// Options:
-	//    Hash   a hash function; HashLen denotes the length of the
-	//           hash function output in octets
 	// Inputs:
 	//    PRK    a pseudorandom key of at least HashLen octets
 	//           (usually, the output from the extract step)
@@ -72,9 +63,82 @@ interface HKDF {
 	//           (<= 255*HashLen)
 	// Output:
 	//   OKM     output keying material (of L octets)
-	// The output OKM is calculated as follows:
+	expand(prk []u8, info []u8, length int) ![]u8
+}
+
+// DefaultHKDF is a default implementation of HKDF interface.
+@[noinit]
+struct DefaultHKDF implements HKDF {
+mut:
+	// h is an underlying hash used on HKDF operation, set on creation
+	h crypto.Hash = .sha256
+	// xof_size is the size of output of Extendable-output function (XOF)-based hash.
+	// Its used to support xof-based hash output	
+	xof_size int
+}
+
+@[params]
+struct HKDFConfig {
+mut:
+	// for XOF-based hash
+	xof_outlen int
+}
+
+// new creates a new default HKDF implementation with provided hash h
+// Note: Some of the hash algorithm was considered as insecure and deprecated, likes a `.sha1`
+// and should be used with care, or not fully completely used as a backend
+pub fn new(h crypto.Hash, opt HKDFConfig) !&DefaultHKDF {
+	if h !in supported_hash {
+		return error('Unsupported of HKDF hash')
+	}
+
+	return &DefaultHKDF{
+		h: h
+	}
+}
+
+// extract performs HKDF-Extract operation defined in the standard.
+// The extract operation essentially hashes the input material using HMAC
+// with a designated (optional) salt value and produces cryptographically
+// strong Pseudorandom Key (prk) bytes reduced into a fixed-length output.
+@[direct_array_access]
+pub fn (d &DefaultHKDF) extract(salt []u8, ikm []u8) ![]u8 {
+	// if salt was zeros length, it is set to .hash_length zeros-bytes instead.
+	// Otherwise, use the provided salt bytes as is.
+	new_salt := if salt.len == 0 {
+		[]u8{len: d.hash_length(), init: u8(0x00)}
+	} else {
+		salt
+	}
+	// like the salt, if ikm was zeros length, its set to hash_length zeros-bytes instead.
+	// Otherwise, use the provided ikm bytes as is
+	new_ikm := if ikm.len == 0 {
+		[]u8{len: d.hash_length(), init: u8(0x00)}
+	} else {
+		ikm
+	}
+	// returns the output of a pseudorandom key (of hash_length octets)
+	// calculated as PRK = HMAC-Hash(salt, IKM)
+	return d.create_hmac(new_salt, new_ikm)!
+}
+
+// expand performs a HKDF-Expand operation defined in the standard.
+// Its takes and expands a fixed-length pseudorandom key prk into multiple cryptographically
+// strong subkeys or keying material of any desired length. It uses an optional info context
+// to ensure the derived keys are strictly bound to their intended purpose.
+@[direct_array_access]
+pub fn (d &DefaultHKDF) expand(prk []u8, info []u8, length int) ![]u8 {
+	// check for info length
+	if info.len > max_info_size {
+		return error('info length was exceed allowed library limit')
+	}
+	// check for length <= 255*HashLen
+	if length > 255 * d.hash_length() {
+		return error('Cannot expand to more than 255 * d.hash_length()')
+	}
+	// The output of keying material (OKM) is calculated as follows:
 	//
-	//  N = ceil(L/HashLen)
+	// N = ceil(L/HashLen)
 	// T = T(1) | T(2) | T(3) | ... | T(N)
 	// OKM = first L octets of T
 	// where:
@@ -85,69 +149,27 @@ interface HKDF {
 	//...
 	//(where the constant concatenated to the end of each T(n) is a
 	// single octet.)
-	expand(prk []u8, info []u8) ![]u8
-}
-
-@[noinit]
-struct DefaultHKDF {
-mut:
-	h crypto.Hash = .sha256
-}
-
-pub fn new(h crypto.Hash) !&DefaultHKDF {
-	if h !in supported_hash {
-		return error('Unsupported of HKDF hash')
-	}
-
-	return &DefaultHKDF{
-		h: h
-	}
-}
-
-pub fn (d &DefaultHKDF) extract(salt []u8, ikm []u8) ![]u8 {
-	new_salt := if salt.len == 0 {
-		// use null hash.len bytes instead
-		[]u8{len: d.hash_length(), init: u8(0x00)}
-	} else {
-		// non-null size salt, use original salt instead
-		salt
-	}
-	// if ikm.len == 0, use hash.len zeros bytes
-	new_ikm := if ikm.len == 0 {
-		// is it should to init to hash.len null arrays instead
-		[]u8{len: d.hash_length(), init: u8(0x00)}
-	} else {
-		// use non-null length input key material
-		ikm
-	}
-	return d.create_hmac(new_salt, new_ikm)!
-}
-
-pub fn (d &DefaultHKDF) expand(prk []u8, info []u8, length int) ![]u8 {
-	// check for length <= 255*HashLen
-	if length > 255 * d.hash_length() {
-		return error('Cannot expand to more than 255 * d.hash_length()')
-	}
 	ceil := if length % d.hash_length() == 0 { 0 } else { 1 }
-	blk_size := length / d.hash_length() + ceil
-	
+	n := length / d.hash_length() + ceil
+
 	// output keying material buffer
 	mut okm_buf := []u8{cap: length}
 	// temporary buffer
-	mut tmp_buf := []u8{cap: blk_size}
-	for i := 0; i < blk_size; i++ {
+	mut tmp_buf := []u8{cap: n}
+	for i := 0; i < n; i++ {
 		tmp_buf << info
-		// counter
 		tmp_buf << [u8(i + 1)]
 		tmp_buf = d.create_hmac(prk, tmp_buf)!
 
 		okm_buf << tmp_buf
 	}
-	// returns only desired length 
+	// returns only desired output length
 	return okm_buf[..length].clone()
 }
 
-fn (d &DefaultHKDF) hash_length() int {
+// hash_length tells the length of the output of underlying hash algorithm, in bytes,
+// used by this implementation of HKDF d.
+pub fn (d &DefaultHKDF) hash_length() int {
 	match d.h {
 		.sha1 { return sha1.size }
 		.sha256 { return sha256.size }
@@ -157,8 +179,13 @@ fn (d &DefaultHKDF) hash_length() int {
 	}
 }
 
+// Helpers
+//
+
+// create_hmac builds HMAC output from the current key and data.
 fn (d &DefaultHKDF) create_hmac(key []u8, data []u8) ![]u8 {
 	match d.h {
+		// NOTE: SHA1 was considered as a deprecated and marked as insecure.
 		.sha1 {
 			return hmac.new(key, data, sha1.sum, sha1.block_size)
 		}
