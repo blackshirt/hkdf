@@ -22,7 +22,7 @@ import crypto.sha512
 const max_info_size = 2048 // 2 KB
 
 // minimum size of xof-based hash output, in bytes
-const min_xof_outsize = 1
+const min_xof_outsize = 24
 
 // maximum size of xof-based hash output, in bytes
 const max_xof_outsize = 4096
@@ -35,7 +35,8 @@ const fixed_sha_hash = [crypto.Hash.sha224, .sha256, .sha384, .sha3_224, .sha3_2
 	.sha3_512, .sha512, .sha512_224, .sha512_256]
 
 // fixed_other_hash is a list of another fixed-output of hash algorithm supported
-// on the standard library
+// on the standard library.
+// NOTE: Its currently was not fully implemented
 const fixed_other_hash = [crypto.Hash.blake2s_256, .blake2b_256, .blake2b_384, .blake2b_512]
 
 // xof_supported_hash is a list of supported xof-based hash algorithms.
@@ -91,16 +92,15 @@ pub interface HKDF {
 @[noinit]
 struct DefaultHKDF implements HKDF {
 	// h is an underlying hash algorithm used on HKDF operation, set on creation. Currently its
-	// support for fixed-output hash and experimental variable-length output size on the xof-based hash.
+	// support for fixed-output hash and experimental variable-length output size.
 	// If you pass correct options for XOF-based hash, its turns the variable-length
-	// output of xof-based hash into fixed-one by storing the output size on the
-	// xof_outsize field.
+	// output into fixed-one by storing the output size on the xof_outsize field.
 	h crypto.Hash = .sha256
-mut:
-	// is_xof flag tells whether this implementation support for xof-based hash.
-	// Its should be set into true for allowing xof-based hash algorithm h should represent a xof-based hash.
+	// is_xof flag tells whether this instance hash a XOF-based hash backend.
+	// Its should be set into true when h represents XOF-based hash.
 	// NOTE: this is experimental features, use with care and cautions.
 	is_xof bool
+mut:
 	// xof_outsize is the size of output of Extendable-output function (XOF)-based hash.
 	// Its used to support xof-based hash output.
 	xof_outsize int
@@ -108,8 +108,7 @@ mut:
 
 // set_xof_outsize sets the size of underlying XOF-based hash output.
 pub fn (mut d DefaultHKDF) set_xof_outsize(size int) ! {
-	// error on unsupported flag, ie, is_xof was false
-	if !d.is_xof { return error('This HKDF was not a XOF-hash backend') }
+	// when d.h is not xof-based hash, do nothing
 	if d.is_xof {
 		if size < min_xof_outsize {
 			return error('size below the low limit of xof size')
