@@ -27,9 +27,19 @@ const min_xof_outsize = 1
 // maximum size of xof-based hash output, in bytes
 const max_xof_outsize = 4096
 
-// supported_hash is a list of supported hash algorithms used across of HKDF operation.
-const supported_hash = [crypto.Hash.sha1, .sha224, .sha256, .sha384, .sha3_224, .sha3_256, .sha3_384,
-	.sha3_512, .sha512, .sha512_224, .sha512_256, .shake128, .shake256]
+// Considered deprecated hash algorithm
+const fixed_deprecated_hash = [crypto.Hash.sha1]
+
+// Fixed-output of SHA1, SHA2, SHA3 and SHA512 hash
+const fixed_sha_hash = [crypto.Hash.sha224, .sha256, .sha384, .sha3_224, .sha3_256, .sha3_384,
+	.sha3_512, .sha512, .sha512_224, .sha512_256]
+
+// fixed_other_hash is a list of another fixed-output of hash algorithm supported
+// on the standard library
+const fixed_other_hash = [crypto.Hash.blake2s_256, .blake2b_256, .blake2b_384, .blake2b_512]
+
+// xof_supported_hash is a list of supported xof-based hash algorithms.
+const xof_supported_hash = [crypto.Hash.shake128, .shake256]
 
 // extract generates a pseudorandom key for use with expand operation.
 // Its takes form an input secret and an optional independent salt.
@@ -80,33 +90,32 @@ pub interface HKDF {
 // DefaultHKDF is a default implementation of HKDF interface.
 @[noinit]
 struct DefaultHKDF implements HKDF {
-mut:
-	// h is an underlying hash used on HKDF operation, set on creation. Currently its
-	// support for fixed-output hash and variable-length output size on the xof-based hash.
+	// h is an underlying hash algorithm used on HKDF operation, set on creation. Currently its
+	// support for fixed-output hash and experimental variable-length output size on the xof-based hash.
 	// If you pass correct options for XOF-based hash, its turns the variable-length
 	// output of xof-based hash into fixed-one by storing the output size on the
 	// xof_outsize field.
 	h crypto.Hash = .sha256
-	// xof_support flag to tell this implementation support for xof-based hash.
-	// Its should be set into true for allowing xof-based hash and underlying hash
-	// algorithm h should represent a xof-based hash.
+mut:
+	// is_xof flag tells whether this implementation support for xof-based hash.
+	// Its should be set into true for allowing xof-based hash algorithm h should represent a xof-based hash.
 	// NOTE: this is experimental features, use with care and cautions.
-	xof_support bool
+	is_xof bool
 	// xof_outsize is the size of output of Extendable-output function (XOF)-based hash.
 	// Its used to support xof-based hash output.
 	xof_outsize int
 }
 
 // set_xof_outsize sets the size of underlying XOF-based hash output.
-fn (mut d DefaultHKDF) set_xof_outsize(size int) ! {
-	// error on unsupported flag, ie, xof_support was false
-	if !d.xof_support { return error('This HKDF was not support for xof-based hash') }
-	if d.xof_support {
+pub fn (mut d DefaultHKDF) set_xof_outsize(size int) ! {
+	// error on unsupported flag, ie, is_xof was false
+	if !d.is_xof { return error('This HKDF was not a XOF-hash backend') }
+	if d.is_xof {
 		if size < min_xof_outsize {
 			return error('size below the low limit of xof size')
 		}
 		if size > max_xof_outsize {
-			return error('size exceed the limit of allowed xof size')
+			return error('size exceed the limit of xof size')
 		}
 		// sets it up
 		d.xof_outsize = size
@@ -118,8 +127,6 @@ fn (mut d DefaultHKDF) set_xof_outsize(size int) ! {
 @[params]
 pub struct HKDFConfig {
 pub mut:
-	// support to pass flag for an experimental xof-based hash
-	xof_support bool
 	// for XOF-based hash, tells the size of the xof output
 	xof_outsize int
 }
@@ -128,12 +135,27 @@ pub mut:
 // Note: Some of the hash algorithm was considered as insecure and deprecated, likes a `.sha1`
 // and should be used with care, or not fully completely used as a backend
 pub fn new(h crypto.Hash, opt HKDFConfig) !&DefaultHKDF {
-	if h !in supported_hash {
-		return error('Unsupported of HKDF hash')
+	// the crypto hash h should fall on the supported list, even not all supported
+	if h !in fixed_deprecated_hash && h !in fixed_sha_hash && h !in xof_supported_hash {
+		return error('Unsupported of HKDF hash : ${h}')
+	}
+	// Is this hash was XOF-based hash ? if yes, set up the flags
+	mut is_xof := false
+	if h in xof_supported_hash { is_xof = true }
+	xof_size := if is_xof {
+		if opt.xof_outsize > max_xof_outsize {
+			return error('provided xof_outsize exceed allowed value')
+		}
+		// use provided options
+		opt.xof_outsize
+	} else {
+		0
 	}
 
 	return &DefaultHKDF{
-		h: h
+		h:           h
+		is_xof:      is_xof
+		xof_outsize: xof_size
 	}
 }
 
@@ -212,10 +234,23 @@ pub fn (d &DefaultHKDF) expand(prk []u8, info []u8, length int) ![]u8 {
 // used by this implementation of HKDF d.
 pub fn (d &DefaultHKDF) hash_length() int {
 	match d.h {
-		.sha1 { return sha1.size }
-		.sha256 { return sha256.size }
-		.sha384 { return sha512.size384 }
-		.sha512 { return sha512.size }
+		// SHA-1
+		.sha1 { return sha1.size } // 20
+		// SHA-2
+		.sha224 { return sha256.size224 } // 28
+		.sha256 { return sha256.size } // 32
+		// SHA-512
+		.sha512_224 { return sha512.size224 } // 28
+		.sha512_256 { return sha512.size256 } // 32
+		.sha384 { return sha512.size384 } // 48
+		.sha512 { return sha512.size } // 64
+		// SHA-3
+		.sha3_224 { return sha3.size_224 } // 28
+		.sha3_256 { return sha3.size_256 } // 32
+		.sha3_384 { return sha3.size_384 } // 48
+		.sha3_512 { return sha3.size_512 } // 64
+		// for XOF-hash, return stored internal output size
+		.shake128, .shake256 { return d.xof_outsize }
 		else { panic('unsupported hash') }
 	}
 }
@@ -231,14 +266,38 @@ fn (d &DefaultHKDF) create_hmac(key []u8, data []u8) ![]u8 {
 		.sha1 {
 			return hmac.new(key, data, sha1.sum, sha1.block_size)
 		}
+		// SHA-2
+		.sha224 {
+			return hmac.new(key, data, sha256.sum224, sha256.block_size)
+		}
 		.sha256 {
 			return hmac.new(key, data, sha256.sum, sha256.block_size)
 		}
+		// SHA-512
 		.sha384 {
 			return hmac.new(key, data, sha512.sum384, sha512.block_size)
 		}
 		.sha512 {
 			return hmac.new(key, data, sha512.sum512, sha512.block_size)
+		}
+		.sha512_224 {
+			return hmac.new(key, data, sha512.sum512_224, sha512.block_size)
+		}
+		.sha512_256 {
+			return hmac.new(key, data, sha512.sum512_256, sha512.block_size)
+		}
+		// SHA-3
+		.sha3_224 {
+			return hmac.new(key, data, sha3.sum224, sha3.rate_224)
+		}
+		.sha3_256 {
+			return hmac.new(key, data, sha3.sum256, sha3.rate_256)
+		}
+		.sha3_384 {
+			return hmac.new(key, data, sha3.sum384, sha3.rate_384)
+		}
+		.sha3_512 {
+			return hmac.new(key, data, sha3.sum512, sha3.rate_512)
 		}
 		// NOTE: this code parts was not tested, and acts as an experimental
 		// support for xof-based hash. Its not recommended to use xof-based

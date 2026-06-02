@@ -365,3 +365,46 @@ fn test_hmac_new_sha256() {
 		assert result == sha256_expected_results[i]
 	}
 }
+
+fn test_hkdf_create_hmac_sha3_512() ! {
+	// https://www.liavaag.org/English/SHA-Generator/HMAC/
+	text := 'test'.bytes()
+	key := 'key'.bytes()
+	// hmac sha3_512
+	exp := 'ddf457f9f8dcf91c459f2d36c79ad2625d86109ebf6835df5e235cb5039f7906b1e04ddbb589ffa590825c4312137fc01dd8dc29bb6b8a0d117d6953283ec2b2'
+	k := new(.sha3_512)!
+	out := k.create_hmac(key, text)!
+	assert out.hex() == exp
+}
+
+fn test_hkdf_create_hmac_2() ! {
+	// Generated parameter from https://www.lddgo.net/en/encrypt/hkdf
+	// Input Key Material(IKM)
+	key := 'key'.bytes()
+	// Info
+	info := 'info'.bytes()
+	// Salt
+	salt := 'salt'.bytes()
+
+	// Hash Algorithm SHA3-512
+	k := new(.sha3_512)!
+	// Produced Derived Key output
+	out := 'bdc190fe6b334e28a00988073218af4cc9dbfaacd3e18c2a51c96a9bd7410329'
+
+	// Derived Key Length (in bits)
+	klen_inbits := 256
+	length := 256 / 8
+
+	// Skip Extract : No
+
+	prk := k.extract(salt, key)!
+	expand := k.expand(prk, info, length)!
+	assert expand.hex() == out
+
+	// with the same params, but with SHA3-384
+	exp2 := '1a93888f0e34c22d0bef3e311969466ac055222c6150df2ceda8660a3d3fa1ac'
+	k2 := new(.sha3_384)!
+	prk2 := k2.extract(salt, key)!
+	expand2 := k2.expand(prk2, info, length)!
+	assert expand2.hex() == exp2
+}
