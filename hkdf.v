@@ -23,10 +23,10 @@ import crypto.blake2s
 // Some crypto libraries limit it into 1024-bytes and or 2048-bytes size.
 const max_info_size = 2048 // 2 KB
 
-// minimum size of xof-based hash output, in bytes
+// minimum size of XOF-based digest output, in bytes
 const min_xof_outsize = 24
 
-// maximum size of xof-based hash output, in bytes
+// maximum size of XOF-based digest output, in bytes
 const max_xof_outsize = 4096
 
 // Considered deprecated hash algorithm
@@ -41,7 +41,7 @@ const fixed_sha_hash = [crypto.Hash.sha224, .sha256, .sha384, .sha3_224, .sha3_2
 // NOTE: Its currently was not fully implemented
 const fixed_other_hash = [crypto.Hash.blake2s_256, .blake2b_256, .blake2b_384, .blake2b_512]
 
-// xof_supported_hash is a list of supported xof-based hash algorithms.
+// xof_supported_hash is a list of supported XOF-based digest algorithms.
 const xof_supported_hash = [crypto.Hash.shake128, .shake256]
 
 // extract generates a pseudorandom key for use with expand operation.
@@ -106,16 +106,16 @@ pub interface HKDF {
 struct DefaultHKDF implements HKDF {
 	// h is an underlying hash algorithm used on HKDF operation, set on creation. Currently its
 	// support for fixed-output hash and experimental variable-length output size.
-	// If you pass correct options for XOF-based hash, its turns the variable-length
+	// If you pass correct options for XOF-based digest, its turns the variable-length
 	// output into fixed-one by storing the output size on the xof_outsize field.
 	h crypto.Hash = .sha256
-	// is_xof flag tells whether this instance hash a XOF-based hash backend.
-	// Its should be set into true when h represents XOF-based hash.
+	// is_xof flag tells whether this instance hash a XOF-based digest backend.
+	// Its should be set into true when h represents XOF-based digest.
 	// NOTE: this is experimental features, use with care and cautions.
 	is_xof bool
 mut:
 	// xof_outsize is the size of output of Extendable-output function (XOF)-based hash.
-	// Its used to support xof-based hash output.
+	// Its used to support XOF-based digest output.
 	xof_outsize int
 }
 
@@ -127,7 +127,7 @@ pub fn new(h crypto.Hash, opt HKDFConfig) !&DefaultHKDF {
 	if h !in fixed_deprecated_hash && h !in fixed_sha_hash && h !in xof_supported_hash {
 		return error('Unsupported of HKDF hash : ${h}')
 	}
-	// Is this hash was XOF-based hash ? if yes, set up the flags
+	// Is this hash was XOF-based digest ? if yes, set up the flags
 	mut is_xof := false
 	if h in xof_supported_hash { is_xof = true }
 	xof_size := if is_xof {
@@ -165,7 +165,7 @@ pub fn (d &DefaultHKDF) derive(salt []u8, ikm []u8, info []u8, length int) ![]u8
 // set_xof_outsize sets the internal size of underlying (XOF) digest output with new size.
 // Its does nothing if d no has XOF-based digest as a hash backend.
 pub fn (mut d DefaultHKDF) set_xof_outsize(size int) ! {
-	// when d.h is not xof-based hash, do nothing
+	// when d.h is not XOF-based digest, do nothing
 	if d.is_xof {
 		if size < min_xof_outsize {
 			return error('size below the low limit of xof size')
@@ -261,14 +261,14 @@ fn (d &DefaultHKDF) expand(prk []u8, info []u8, length int) ![]u8 {
 // used by this implementation of HKDF d.
 fn (d &DefaultHKDF) hash_length() int {
 	match d.h {
-		// SHA-1
+		// SHA-1, for compatibility purposes
 		.sha1 { return 20 } // 20
 		// Fixed-output hash
 		.sha224, .sha512_224, .sha3_224 { return 28 }
 		.sha256, .sha512_256, .sha3_256, .blake2s_256, .blake2b_256 { return 32 }
 		.sha384, .sha3_384, .blake2b_384 { return 48 }
 		.sha512, .sha3_512, .blake2b_512 { return 64 }
-		// for XOF-hash, return stored internal output size
+		// for XOF-based digest, return internal size stored on the xof_outsize field.
 		.shake128, .shake256 { return d.xof_outsize }
 		else { panic('unsupported hash') }
 	}
@@ -316,7 +316,7 @@ fn (d &DefaultHKDF) create_hmac(key []u8, data []u8) ![]u8 {
 			return hmac.new(key, data, sha3.sum512, sha3.rate_512)
 		}
 		// NOTE: this code parts was not tested, and acts as an experimental
-		// support for xof-based hash. Its not recommended to use xof-based
+		// support for XOF-based digest. Its not recommended to use XOF-based digest
 		// on hmac construction.
 		.shake128 {
 			cb := fn [d] (msg []u8) []u8 {
@@ -353,15 +353,15 @@ fn (d &DefaultHKDF) create_hmac(key []u8, data []u8) ![]u8 {
 }
 
 // HKDFConfig was an option opaque to drive the HKDF creation and or operation.
-// Currently, only used for XOF-based hash backend.
+// Currently, only used for XOF-based digest backend.
 @[params]
 pub struct HKDFConfig {
 pub mut:
-	// for XOF-based hash, tells the size of the xof output
+	// for XOF-based digest, tells the size of the xof output
 	xof_outsize int
 }
 
-// little hack to allow xof-based hash used in hkdf construction
+// little hack to allow XOF-based digest used in hkdf construction
 @[direct_array_access; inline]
 fn xof_callback(data []u8) []u8 {
 	return data
