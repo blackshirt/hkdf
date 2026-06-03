@@ -59,36 +59,47 @@ pub fn expand(h crypto.Hash, prk []u8, info []u8, length int, opt HKDFConfig) ![
 	return k.expand(prk, info, length)!
 }
 
+// derive performs an `extract then expand` steps of the HKDF operation to derive
+// a new keying material with specified length.
+pub fn derive(h crypto.Hash, salt []u8, ikm []u8, info []u8, length int, opt HKDFConfig) ![]u8 {
+	k := new(h, opt)!
+	return k.derive(salt, ikm, info, length)!
+}
+
 // HKDF is a key derivation function (KDF) based on the HMAC message authentication code.
 pub interface HKDF {
-	// hash_length tells the output's size of the underlying hash algorithm backend
-	// used on this HKDF instance.
-	hash_length() int
-
-	// extract performs HKDF-Extract(salt, IKM) -> PRK
-	// Inputs:
-	//  salt     optional salt value (a non-secret random value);
-	//           if not provided, it is set to a string of HashLen zeros.
-	//  IKM      input keying material
+	// derive derives and performs "Extract-then-Expand" of HKDF operation.
+	// Its return derived key with specified length.
 	//
-	// Output:
-	//  PRK      a pseudorandom key (of HashLen octets)
-	extract(salt []u8, ikm []u8) ![]u8
-
-	// expand performs HKDF-Expand(PRK, info, L) -> OKM
-	// Inputs:
+	// Basically, its does two steps of `extract` and `expand` operations
+	// defined in standard.
+	// 1. extract performs HKDF-Extract(salt, IKM) -> PRK
+	//    Inputs:
+	//    salt     optional salt value (a non-secret random value);
+	//             if not provided, it is set to a string of HashLen zeros.
+	//    IKM      input keying material
+	//
+	//    Output:
+	//    PRK      a pseudorandom key (of HashLen octets)
+	//    ie, extract(salt []u8, ikm []u8) ![]u8
+	//
+	// 2. expand performs HKDF-Expand(PRK, info, L) -> OKM
+	//    Inputs:
 	//    PRK    a pseudorandom key of at least HashLen octets
 	//           (usually, the output from the extract step)
 	//    info   optional context and application specific information
 	//           (can be a zero-length string)
 	//    L      length of output keying material in octets
 	//           (<= 255*HashLen)
-	// Output:
-	//   OKM     output keying material (of L octets)
-	expand(prk []u8, info []u8, length int) ![]u8
+	//    Output:
+	//    OKM     output keying material (of L octets)
+	//    ie, expand(prk []u8, info []u8, length int) ![]u8
+	derive(salt []u8, ikm []u8, info []u8, length int) ![]u8
 }
 
-// DefaultHKDF is a default implementation of HKDF interface.
+// DefaultHKDF is a default implementation of HKDF that supports for various
+// range of digest algorithms availables on the standard library.
+// Note: Support for an eXtensible Output Function (XOF)-based digest was an experimental.
 @[noinit]
 struct DefaultHKDF implements HKDF {
 	// h is an underlying hash algorithm used on HKDF operation, set on creation. Currently its
@@ -103,30 +114,6 @@ struct DefaultHKDF implements HKDF {
 mut:
 	// xof_outsize is the size of output of Extendable-output function (XOF)-based hash.
 	// Its used to support xof-based hash output.
-	xof_outsize int
-}
-
-// set_xof_outsize sets the size of underlying XOF-based hash output.
-pub fn (mut d DefaultHKDF) set_xof_outsize(size int) ! {
-	// when d.h is not xof-based hash, do nothing
-	if d.is_xof {
-		if size < min_xof_outsize {
-			return error('size below the low limit of xof size')
-		}
-		if size > max_xof_outsize {
-			return error('size exceed the limit of xof size')
-		}
-		// sets it up
-		d.xof_outsize = size
-	}
-}
-
-// HKDFConfig was an option opaque to drive the HKDF creation and or operation.
-// Currently, only used for XOF-based hash backend.
-@[params]
-pub struct HKDFConfig {
-pub mut:
-	// for XOF-based hash, tells the size of the xof output
 	xof_outsize int
 }
 
@@ -158,12 +145,45 @@ pub fn new(h crypto.Hash, opt HKDFConfig) !&DefaultHKDF {
 	}
 }
 
+// derive performs an `extract then expand` steps of the HKDF operation to derive
+// a new keying material with specified length.
+//
+// @param salt: optional salt value (a non-secret random value).
+//				if not provided, it is set to a string of hash length zeros
+// @param ikm: 	input keying material
+// @param info: optional context and application specific information
+//           	(can be a zero-length string)
+// @param length: length of output keying material in octets (<= 255*Hash length)
+// Return a bytes of derived key as an output keying material.
+pub fn (d &DefaultHKDF) derive(salt []u8, ikm []u8, info []u8, length int) ![]u8 {
+	prk := d.extract(salt, ikm)!
+	return d.expand(prk, info, length)!
+}
+
+// set_xof_outsize sets the internal size of underlying (XOF) digest output with new size.
+// Its does nothing if d no has XOF-based digest as a hash backend.
+pub fn (mut d DefaultHKDF) set_xof_outsize(size int) ! {
+	// when d.h is not xof-based hash, do nothing
+	if d.is_xof {
+		if size < min_xof_outsize {
+			return error('size below the low limit of xof size')
+		}
+		if size > max_xof_outsize {
+			return error('size exceed the limit of xof size')
+		}
+		// sets it up
+		d.xof_outsize = size
+	}
+}
+
+// Helpers (internal routines) for DefaultHKDF
+//
 // extract performs HKDF-Extract operation defined in the standard.
 // The extract operation essentially hashes the input material using HMAC
 // with a designated (optional) salt value and produces cryptographically
-// strong Pseudorandom Key (prk) bytes reduced into a fixed-length output.
+// pseudorandom Key (PRK) bytes reduced into a fixed-length output.
 @[direct_array_access]
-pub fn (d &DefaultHKDF) extract(salt []u8, ikm []u8) ![]u8 {
+fn (d &DefaultHKDF) extract(salt []u8, ikm []u8) ![]u8 {
 	// if salt was zeros length bytes, it would be set to .hash_length zeros-bytes instead.
 	// Otherwise, use the provided salt bytes as is.
 	new_salt := if salt.len == 0 {
@@ -188,8 +208,9 @@ pub fn (d &DefaultHKDF) extract(salt []u8, ikm []u8) ![]u8 {
 // Its takes and expands a fixed-length pseudorandom key prk into multiple cryptographically
 // strong subkeys or keying material of any desired length. It uses an optional info context
 // to ensure the derived keys are strictly bound to their intended purpose.
+// Note: prk key should come from `.extract` step from previous operation.
 @[direct_array_access]
-pub fn (d &DefaultHKDF) expand(prk []u8, info []u8, length int) ![]u8 {
+fn (d &DefaultHKDF) expand(prk []u8, info []u8, length int) ![]u8 {
 	// check for info length
 	if info.len > max_info_size {
 		return error('info length was exceed allowed library limit')
@@ -231,7 +252,7 @@ pub fn (d &DefaultHKDF) expand(prk []u8, info []u8, length int) ![]u8 {
 
 // hash_length tells the length of the output of underlying hash algorithm, in bytes,
 // used by this implementation of HKDF d.
-pub fn (d &DefaultHKDF) hash_length() int {
+fn (d &DefaultHKDF) hash_length() int {
 	match d.h {
 		// SHA-1
 		.sha1 { return sha1.size } // 20
@@ -253,9 +274,6 @@ pub fn (d &DefaultHKDF) hash_length() int {
 		else { panic('unsupported hash') }
 	}
 }
-
-// Helpers
-//
 
 // create_hmac builds HMAC output from the current key and message data.
 @[direct_array_access]
@@ -319,6 +337,15 @@ fn (d &DefaultHKDF) create_hmac(key []u8, data []u8) ![]u8 {
 			return error('unsupported hash')
 		}
 	}
+}
+
+// HKDFConfig was an option opaque to drive the HKDF creation and or operation.
+// Currently, only used for XOF-based hash backend.
+@[params]
+pub struct HKDFConfig {
+pub mut:
+	// for XOF-based hash, tells the size of the xof output
+	xof_outsize int
 }
 
 // little hack to allow xof-based hash used in hkdf construction
