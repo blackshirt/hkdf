@@ -124,7 +124,8 @@ mut:
 // and should be used with care, or not fully completely used as a backend
 pub fn new(h crypto.Hash, opt HKDFConfig) !&DefaultHKDF {
 	// the crypto hash h should fall on the supported list, even not all supported
-	if h !in fixed_deprecated_hash && h !in fixed_sha_hash && h !in xof_supported_hash {
+	if h !in fixed_deprecated_hash && h !in fixed_sha_hash && h !in fixed_other_hash
+		&& h !in xof_supported_hash {
 		return error('Unsupported of HKDF hash : ${h}')
 	}
 	// Is this hash was XOF-based digest ? if yes, set up the flags
