@@ -14,6 +14,8 @@ import crypto.sha1
 import crypto.sha3
 import crypto.sha256
 import crypto.sha512
+import crypto.blake2b
+import crypto.blake2s
 
 // max_info_size is the limit size (on this library) of the info parameter input, in bytes.
 // Under the specification, there is no formal byte-size limit for the info parameter.
@@ -211,6 +213,11 @@ fn (d &DefaultHKDF) extract(salt []u8, ikm []u8) ![]u8 {
 // Note: prk key should come from `.extract` step from previous operation.
 @[direct_array_access]
 fn (d &DefaultHKDF) expand(prk []u8, info []u8, length int) ![]u8 {
+	// prk bytes should come from extract step or externally cryptographically secured key
+	// supplied by the user. Its should be have non-null length.
+	if prk.len == 0 {
+		return error('expand with null prk length')
+	}
 	// check for info length
 	if info.len > max_info_size {
 		return error('info length was exceed allowed library limit')
@@ -255,20 +262,12 @@ fn (d &DefaultHKDF) expand(prk []u8, info []u8, length int) ![]u8 {
 fn (d &DefaultHKDF) hash_length() int {
 	match d.h {
 		// SHA-1
-		.sha1 { return sha1.size } // 20
-		// SHA-2
-		.sha224 { return sha256.size224 } // 28
-		.sha256 { return sha256.size } // 32
-		// SHA-512
-		.sha512_224 { return sha512.size224 } // 28
-		.sha512_256 { return sha512.size256 } // 32
-		.sha384 { return sha512.size384 } // 48
-		.sha512 { return sha512.size } // 64
-		// SHA-3
-		.sha3_224 { return sha3.size_224 } // 28
-		.sha3_256 { return sha3.size_256 } // 32
-		.sha3_384 { return sha3.size_384 } // 48
-		.sha3_512 { return sha3.size_512 } // 64
+		.sha1 { return 20 } // 20
+		// Fixed-output hash
+		.sha224, .sha512_224, .sha3_224 { return 28 }
+		.sha256, .sha512_256, .sha3_256, .blake2s_256, .blake2b_256 { return 32 }
+		.sha384, .sha3_384, .blake2b_384 { return 48 }
+		.sha512, .sha3_512, .blake2b_512 { return 64 }
 		// for XOF-hash, return stored internal output size
 		.shake128, .shake256 { return d.xof_outsize }
 		else { panic('unsupported hash') }
@@ -332,6 +331,20 @@ fn (d &DefaultHKDF) create_hmac(key []u8, data []u8) ![]u8 {
 				return xof_callback(xofout)
 			}
 			return hmac.new(key, data, cb, sha3.xof_rate_256)
+		}
+		// BLAKE2s-digest
+		.blake2s_256 {
+			return hmac.new(key, data, blake2s.sum256, blake2s.block_size)
+		}
+		// BLAKE2b-digest
+		.blake2b_256 {
+			return hmac.new(key, data, blake2b.sum256, blake2b.block_size)
+		}
+		.blake2b_384 {
+			return hmac.new(key, data, blake2b.sum384, blake2b.block_size)
+		}
+		.blake2b_512 {
+			return hmac.new(key, data, blake2b.sum512, blake2b.block_size)
 		}
 		else {
 			return error('unsupported hash')
