@@ -146,7 +146,7 @@ pub fn new(h crypto.Hash, opt HKDFConfig) !&DefaultHKDF {
 		// use provided options
 		opt.xof_outsize
 	} else {
-		0
+		min_xof_outsize
 	}
 
 	return &DefaultHKDF{
@@ -187,14 +187,12 @@ pub fn (mut d DefaultHKDF) set_xof_outsize(size int) ! {
 	}
 }
 
-// Helpers (internal routines) for DefaultHKDF
-//
 // extract performs HKDF-Extract operation defined in the standard.
 // The extract operation essentially hashes the input material using HMAC
 // with a designated (optional) salt value and produces cryptographically
 // pseudorandom Key (PRK) bytes reduced into a fixed-length output.
 @[direct_array_access]
-fn (d &DefaultHKDF) extract(salt []u8, ikm []u8) ![]u8 {
+pub fn (d &DefaultHKDF) extract(salt []u8, ikm []u8) ![]u8 {
 	// if salt was zeros length bytes, it would be set to .hash_length zeros-bytes instead.
 	// Otherwise, use the provided salt bytes as is.
 	new_salt := if salt.len == 0 {
@@ -221,7 +219,7 @@ fn (d &DefaultHKDF) extract(salt []u8, ikm []u8) ![]u8 {
 // to ensure the derived keys are strictly bound to their intended purpose.
 // Note: prk key should come from `.extract` step from previous operation.
 @[direct_array_access]
-fn (d &DefaultHKDF) expand(prk []u8, info []u8, length int) ![]u8 {
+pub fn (d &DefaultHKDF) expand(prk []u8, info []u8, length int) ![]u8 {
 	// prk bytes should come from extract step or externally cryptographically secured key
 	// supplied by the user. Its should be have non-null length.
 	if prk.len == 0 {
@@ -265,6 +263,9 @@ fn (d &DefaultHKDF) expand(prk []u8, info []u8, length int) ![]u8 {
 	// returns only desired output length
 	return okm_buf[..length].clone()
 }
+
+// Helpers (internal routines) for DefaultHKDF
+//
 
 // hash_length tells the length of the output of underlying hash algorithm, in bytes,
 // used by this implementation of HKDF d.

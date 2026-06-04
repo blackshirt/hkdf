@@ -40,7 +40,7 @@ fn test_hkdf_derive_1() ! {
 	length := 32 // 256 / 8
 
 	// derived key, with Skip Extract: No
-	okm := '2ba9b938abf0c33c655e3e3c5623015cd13f76c196cc0e5af5f3b1880ac82998'
+	okm := '087d998a2b31a5826dede8d7baf81476f41ec9c1c8717c021ee457e806cccc0c'
 
 	d := new(.sha3_384)!
 	out := d.derive(salt, ikm, info, length)!
@@ -48,6 +48,6 @@ fn test_hkdf_derive_1() ! {
 
 	// test with skip extract yes:
 	// out2 := d.expand(ikm, info, length)!
-	// okm2 := 'bffe01d3a2b840ff1133c428a727ace40b7bcf6d21f955d51881a1071ef3832b'
+	// okm2 := '24d3bf32f77c7bb3304900d58c671271ac9c319e8890089942d8dd91c444fcab'
 	// assert out2.hex() == okm2 // True
 }
