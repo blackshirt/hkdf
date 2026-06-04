@@ -35,7 +35,7 @@ fn test_hkdf_derive_0() ! {
 fn test_hkdf_derive_1() ! {
 	// Digest alg: SHA3-384
 	ikm := 'this is input keying material'.bytes()
-	info := 'myinfo'.bytes()
+	info := 'my info'.bytes()
 	salt := 'my salt'.bytes()
 	length := 32 // 256 / 8
 

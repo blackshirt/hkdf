@@ -24,7 +24,7 @@ import crypto.blake2s
 const max_info_size = 2048 // 2 KB
 
 // minimum size of XOF-based digest output, in bytes
-const min_xof_outsize = 24
+const min_xof_outsize = 16
 
 // maximum size of XOF-based digest output, in bytes
 const max_xof_outsize = 4096
@@ -47,6 +47,8 @@ const xof_supported_hash = [crypto.Hash.shake128, .shake256]
 // extract generates a pseudorandom key for use with expand operation.
 // Its takes form an input secret and an optional independent salt.
 // The hash algorithm used as a backend of operation supplied in h parameter.
+// NOTE: If you wish to use XOF-based digest, you should provide the correct option
+// value of `xof_outsize` in the allowed current limit ranges, ie, 16-4096 bytes.
 pub fn extract(h crypto.Hash, salt []u8, ikm []u8, opt HKDFConfig) ![]u8 {
 	k := new(h, opt)!
 	return k.extract(salt, ikm)!
@@ -56,6 +58,8 @@ pub fn extract(h crypto.Hash, salt []u8, ikm []u8, opt HKDFConfig) ![]u8 {
 // strong subkeys or keying material of any desired length. An underlying hash algorithm used to do
 // the expand operation was supplied in h parameter. It also uses an optional info context
 // to ensure the derived keys are strictly bound to their intended purpose.
+// NOTE: If you wish to use XOF-based digest, you should provide the correct option
+// value of `xof_outsize` in the allowed current limit ranges, ie, 16-4096 bytes.
 pub fn expand(h crypto.Hash, prk []u8, info []u8, length int, opt HKDFConfig) ![]u8 {
 	k := new(h, opt)!
 	return k.expand(prk, info, length)!
@@ -63,6 +67,8 @@ pub fn expand(h crypto.Hash, prk []u8, info []u8, length int, opt HKDFConfig) ![
 
 // derive performs an `extract then expand` steps of the HKDF operation to derive
 // a new keying material with specified length.
+// NOTE: If you wish to use XOF-based digest, you should provide the correct option
+// value of `xof_outsize` in the allowed current limit ranges, ie, 16-4096 bytes.
 pub fn derive(h crypto.Hash, salt []u8, ikm []u8, info []u8, length int, opt HKDFConfig) ![]u8 {
 	k := new(h, opt)!
 	return k.derive(salt, ikm, info, length)!
@@ -116,12 +122,14 @@ struct DefaultHKDF implements HKDF {
 mut:
 	// xof_outsize is the size of output of Extendable-output function (XOF)-based hash.
 	// Its used to support XOF-based digest output.
-	xof_outsize int
+	xof_outsize int = min_xof_outsize
 }
 
 // new creates a new default HKDF implementation with provided hash h
 // Note: Some of the hash algorithm was considered as insecure and deprecated, likes a `.sha1`
-// and should be used with care, or not fully completely used as a backend
+// and should be used with care, or not fully completely used as a backend.
+// NOTE: If you wish to use XOF-based digest, you should provide the correct option
+// value of `xof_outsize` in the allowed current limit ranges, ie, 16-4096 bytes.
 pub fn new(h crypto.Hash, opt HKDFConfig) !&DefaultHKDF {
 	// the crypto hash h should fall on the supported list, even not all supported
 	if h !in fixed_deprecated_hash && h !in fixed_sha_hash && h !in fixed_other_hash
@@ -132,8 +140,8 @@ pub fn new(h crypto.Hash, opt HKDFConfig) !&DefaultHKDF {
 	mut is_xof := false
 	if h in xof_supported_hash { is_xof = true }
 	xof_size := if is_xof {
-		if opt.xof_outsize > max_xof_outsize {
-			return error('provided xof_outsize exceed allowed value')
+		if opt.xof_outsize > max_xof_outsize || opt.xof_outsize < min_xof_outsize {
+			return error('invalid xof output size, use value between ${min_xof_outsize} - ${max_xof_outsize} size')
 		}
 		// use provided options
 		opt.xof_outsize
@@ -265,8 +273,8 @@ fn (d &DefaultHKDF) hash_length() int {
 		// SHA-1, for compatibility purposes
 		.sha1 { return 20 } // 20
 		// Fixed-output hash
-		.sha224, .sha512_224, .sha3_224 { return 28 }
-		.sha256, .sha512_256, .sha3_256, .blake2s_256, .blake2b_256 { return 32 }
+		.sha224, .sha3_224, .sha512_224 { return 28 }
+		.sha256, .sha3_256, .sha512_256, .blake2s_256, .blake2b_256 { return 32 }
 		.sha384, .sha3_384, .blake2b_384 { return 48 }
 		.sha512, .sha3_512, .blake2b_512 { return 64 }
 		// for XOF-based digest, return internal size stored on the xof_outsize field.

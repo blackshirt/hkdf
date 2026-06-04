@@ -377,7 +377,7 @@ fn test_hkdf_create_hmac_sha3_512() ! {
 	assert out.hex() == exp
 }
 
-fn test_hkdf_create_hmac_2() ! {
+fn test_hkdf_extract_expand_2() ! {
 	// Generated parameter from https://www.lddgo.net/en/encrypt/hkdf
 	// Input Key Material(IKM)
 	key := 'key'.bytes()
@@ -407,4 +407,77 @@ fn test_hkdf_create_hmac_2() ! {
 	prk2 := k2.extract(salt, key)!
 	expand2 := k2.expand(prk2, info, length)!
 	assert expand2.hex() == exp2
+}
+
+fn test_hkdf_with_shake_digest() ! {
+	ikm := 'key'.bytes()
+	info := 'info'.bytes()
+	salt := 'salt'.bytes()
+	length := 46
+	// original xof output size
+	xof_size := 31
+	mut d0 := new(.shake256, xof_outsize: xof_size)!
+
+	ex0_prk := d0.extract(salt, ikm)!
+	assert ex0_prk.len == xof_size
+	// change xof output size to 35
+	d0.set_xof_outsize(35)!
+	ex1_prk := d0.extract(salt, ikm)!
+	assert ex1_prk.len == 35
+
+	okm := d0.expand(ex1_prk, info, length)!
+	assert okm.len == length
+
+	// derive
+	// the last xof_outsize was 35
+	derived_key := derive(.shake256, salt, ikm, info, length, xof_outsize: 35)!
+	assert okm == derived_key
+}
+
+// The test output was generated with https://www.lddgo.net/en/encrypt/hkdf
+// with fixed ikm, info, salt and length
+struct HKDFTest {
+	h            crypto.Hash
+	skip_extract bool
+	out          string
+}
+
+// Test materials generated with above link
+const hkdf_test_data = [
+	HKDFTest{.sha1, false, 'f341bf15904f93e58299e3f845973c4ba62b83e90ce47648d072d724f6b7dfba'},
+	HKDFTest{.sha1, true, 'a209ce3366c31da29f038d76f4d965592d9e1a0c61e65f883137a5b8f9b7f055'},
+	HKDFTest{.sha224, false, '1c3597a8abf46378c3c2a3d3717ddee61cf11fb39c1bb8485fdb3c6ef2ab4f85'},
+	HKDFTest{.sha224, true, 'f7d6403d63e6b96066cff74b79d08802d5598e6c031f40410b4e408183d37bf3'},
+	HKDFTest{.sha256, false, 'e7718344944f08a2231fd209df85d8c5308094c3d9b60353f8bb008c97e7c613'},
+	HKDFTest{.sha256, true, 'fb29aca34edae44b2a667d0fbd17caa0b8c547feb5f5b47645db07500aca292b'},
+	HKDFTest{.sha384, false, 'f6d2fc1e6ead4d37a6bf5adc0819f88e55bcbf1455cb1cca742e0a4e352cde4c'},
+	HKDFTest{.sha384, true, 'ca3e2b3034d9fb272b5868e41da286af2b3c5026d6ffa4b42a664da04cb8e745'},
+	HKDFTest{.sha512, false, '5f0eebe86499ca405c73ca093941711036f02f3c0ce21650bbfd1f7032216066'},
+	HKDFTest{.sha512, true, '3a13c3028cc6fbc006b815d041b6b07068ab4eb1e2632fb9febcc49137ec531b'},
+	HKDFTest{.sha3_224, false, 'ca342e60a7654a735cf7fdd0e91a7f87a29d95a2ba61ed976d5ed9922be4bbcb'},
+	HKDFTest{.sha3_224, true, 'd2e0b238ce1b2a33f22b8ed5e83ea46582897212c92f049dd1e8655511bfec09'},
+	HKDFTest{.sha3_256, false, '3834df2ce9241eb84b3a479589c8326f1174e649c5f240580e6344a573af3158'},
+	HKDFTest{.sha3_256, true, '1e34870f4fac9a42356c1b3dc2579698504bc93d345c333b86e235c17682fbc4'},
+	HKDFTest{.sha3_384, false, '087d998a2b31a5826dede8d7baf81476f41ec9c1c8717c021ee457e806cccc0c'},
+	HKDFTest{.sha3_384, true, '24d3bf32f77c7bb3304900d58c671271ac9c319e8890089942d8dd91c444fcab'},
+	HKDFTest{.sha3_512, false, '4783fa83d6f63d1bfbe48af64fc11abb255e5b4a6188e78d33e590ccebb9ddf0'},
+	HKDFTest{.sha3_512, true, 'd71eb57f579886bba6e80bf88b314a1c240ab9096e14b67090e12984ce604357'},
+]
+
+fn test_hkdf_derive_expand_with_or_without_extract_step() ! {
+	ikm := 'this is input keying material'.bytes()
+	info := 'my info'.bytes()
+	salt := 'my salt'.bytes()
+	length := 32 // 256 / 8
+
+	for item in hkdf_test_data {
+		d := new(item.h)!
+		if item.skip_extract {
+			out := d.expand(ikm, info, length)!
+			assert out.hex() == item.out
+		} else {
+			out := d.derive(salt, ikm, info, length)!
+			assert out.hex() == item.out
+		}
+	}
 }
