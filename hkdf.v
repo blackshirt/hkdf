@@ -1,4 +1,4 @@
-// Copyright © 2025 blackshirt.
+// Copyright © 2025, 2026 blackshirt.
 // Use of this source code is governed by an MIT license
 // that can be found in the LICENSE file.
 //
@@ -17,32 +17,32 @@ import crypto.sha512
 import crypto.blake2b
 import crypto.blake2s
 
+// fixed_deprecated_hash is a list of considered deprecated hash algorithm.
+// Its only for compatibility purposes, and should be avoided.
+const fixed_deprecated_hash = [crypto.Hash.sha1]
+
+// fixed_sha_hash is a list of supported fixed-output of SHA-2, SHA-3 and SHA-512 hash algorithm.
+const fixed_sha_hash = [crypto.Hash.sha224, .sha256, .sha384, .sha3_224, .sha3_256, .sha3_384,
+	.sha3_512, .sha512, .sha512_224, .sha512_256]
+
+// fixed_other_hash is a list of another fixed-output of hash algorithm supported on the standard library.
+// NOTE: Its currently only support for BLAKE2b and BLAKE2s
+const fixed_other_hash = [crypto.Hash.blake2s_256, .blake2b_256, .blake2b_384, .blake2b_512]
+
+// xof_supported_hash is a list of supported XOF-based digest algorithms.
+const xof_supported_hash = [crypto.Hash.shake128, .shake256]
+
 // max_info_size is the limit size (on this library) of the info parameter input, in bytes.
 // Under the specification, there is no formal byte-size limit for the info parameter.
 // It can theoretically be any length, but we limit it to prevent memory exhaustion.
 // Some crypto libraries limit it into 1024-bytes and or 2048-bytes size.
 const max_info_size = 2048 // 2 KB
 
-// minimum size of XOF-based digest output, in bytes
+// min_xof_outsize is a minimum size of XOF-based digest output, in bytes.
 const min_xof_outsize = 16
 
-// maximum size of XOF-based digest output, in bytes
+// max_xof_outsize is a maximum size of XOF-based digest output, in bytes
 const max_xof_outsize = 4096
-
-// Considered deprecated hash algorithm
-const fixed_deprecated_hash = [crypto.Hash.sha1]
-
-// Fixed-output of SHA1, SHA2, SHA3 and SHA512 hash
-const fixed_sha_hash = [crypto.Hash.sha224, .sha256, .sha384, .sha3_224, .sha3_256, .sha3_384,
-	.sha3_512, .sha512, .sha512_224, .sha512_256]
-
-// fixed_other_hash is a list of another fixed-output of hash algorithm supported
-// on the standard library.
-// NOTE: Its currently was not fully implemented
-const fixed_other_hash = [crypto.Hash.blake2s_256, .blake2b_256, .blake2b_384, .blake2b_512]
-
-// xof_supported_hash is a list of supported XOF-based digest algorithms.
-const xof_supported_hash = [crypto.Hash.shake128, .shake256]
 
 // extract generates a pseudorandom key for use with expand operation.
 // Its takes form an input secret and an optional independent salt.
@@ -66,7 +66,8 @@ pub fn expand(h crypto.Hash, prk []u8, info []u8, length int, opt HKDFConfig) ![
 }
 
 // derive performs an `extract then expand` steps of the HKDF operation to derive
-// a new keying material with specified length.
+// a new keying material with specified length. The hash algorithm used as a backend of
+// operation supplied in h parameter.
 // NOTE: If you wish to use XOF-based digest, you should provide the correct option
 // value of `xof_outsize` in the allowed current limit ranges, ie, 16-4096 bytes.
 pub fn derive(h crypto.Hash, salt []u8, ikm []u8, info []u8, length int, opt HKDFConfig) ![]u8 {
@@ -110,18 +111,20 @@ pub interface HKDF {
 // Note: Support for an eXtensible Output Function (XOF)-based digest was an experimental.
 @[noinit]
 struct DefaultHKDF implements HKDF {
-	// h is an underlying hash algorithm used on HKDF operation, set on creation. Currently its
-	// support for fixed-output hash and experimental variable-length output size.
+	// h is an underlying hash algorithm used on HKDF operation, set on creation.
+	// Currently its support for fixed-output hash and experimental variable-length output size.
 	// If you pass correct options for XOF-based digest, its turns the variable-length
-	// output into fixed-one by storing the output size on the xof_outsize field.
+	// output into fixed-one by storing the output size on the `xof_outsize` field.
 	h crypto.Hash = .sha256
-	// is_xof flag tells whether this instance hash a XOF-based digest backend.
+	// is_xof flag tells whether this instance has a XOF-based digest backend.
 	// Its should be set into true when h represents XOF-based digest.
-	// NOTE: this is experimental features, use with care and cautions.
+	// NOTE: this is experimental features, use with care and caution.
 	is_xof bool
 mut:
 	// xof_outsize is the size of output of Extendable-output function (XOF)-based hash.
-	// Its used to support XOF-based digest output.
+	// Its used to support XOF-based digest output, and ignored if h was not XOF-based digest.
+	// The size can be changed on subsequent of HKDF operation to reflect variable-length output
+	// by calling `.set_xof_outsize` on this instance.
 	xof_outsize int = min_xof_outsize
 }
 
@@ -131,12 +134,12 @@ mut:
 // NOTE: If you wish to use XOF-based digest, you should provide the correct option
 // value of `xof_outsize` in the allowed current limit ranges, ie, 16-4096 bytes.
 pub fn new(h crypto.Hash, opt HKDFConfig) !&DefaultHKDF {
-	// the crypto hash h should fall on the supported list, even not all supported
+	// the hash h should fall on one's of the supported list.
 	if h !in fixed_deprecated_hash && h !in fixed_sha_hash && h !in fixed_other_hash
 		&& h !in xof_supported_hash {
 		return error('Unsupported of HKDF hash : ${h}')
 	}
-	// Is this hash was XOF-based digest ? if yes, set up the flags
+	// Is h was XOF-based digest ? if yes, set up the flags
 	mut is_xof := false
 	if h in xof_supported_hash { is_xof = true }
 	xof_size := if is_xof {
@@ -220,7 +223,7 @@ pub fn (d &DefaultHKDF) extract(salt []u8, ikm []u8) ![]u8 {
 // Note: prk key should come from `.extract` step from previous operation.
 @[direct_array_access]
 pub fn (d &DefaultHKDF) expand(prk []u8, info []u8, length int) ![]u8 {
-	// prk bytes should come from extract step or externally cryptographically secured key
+	// prk bytes should come from extract step or externally cryptographically secure key
 	// supplied by the user. Its should be have non-null length.
 	if prk.len == 0 {
 		return error('expand with null prk length')
@@ -363,12 +366,15 @@ fn (d &DefaultHKDF) create_hmac(key []u8, data []u8) ![]u8 {
 }
 
 // HKDFConfig was an option opaque to drive the HKDF creation and or operation.
-// Currently, only used for XOF-based digest backend.
 @[params]
 pub struct HKDFConfig {
 pub mut:
-	// for XOF-based digest, tells the size of the xof output
-	xof_outsize int
+	// xof_outsize was a flag to be passed into `.new` HKDF constructor,
+	// especially when you wish for XOF-based digest as a backend.
+	// Its tells the size of the XOF-based output and changeable through
+	// `.set_xof_outsize()` call.
+	// By default, its set into current `min_xof_outsize` value, ie, 16-bytes size.
+	xof_outsize int = min_xof_outsize
 }
 
 // little hack to allow XOF-based digest used in hkdf construction
