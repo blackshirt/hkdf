@@ -38,6 +38,11 @@ const xof_supported_hash = [crypto.Hash.shake128, .shake256]
 // Some crypto libraries limit it into 1024-bytes and or 2048-bytes size.
 const max_info_size = 2048 // 2 KB
 
+// max_salt_size is a maximum size (on this library) for salt parameter input, in bytes.
+// The specification does not dictates the limit of this parameter size.
+// It can theoretically be any length, but we limit it to prevent memory exhaustion.
+const max_salt_size = 4096
+
 // min_xof_outsize is a minimum size of XOF-based digest output, in bytes.
 const min_xof_outsize = 16
 
@@ -196,6 +201,10 @@ pub fn (mut d DefaultHKDF) set_xof_outsize(size int) ! {
 // pseudorandom Key (PRK) bytes reduced into a fixed-length output.
 @[direct_array_access]
 pub fn (d &DefaultHKDF) extract(salt []u8, ikm []u8) ![]u8 {
+	// check for salt length
+	if salt.len > max_salt_size {
+		return error('The salt length exceed the limit allowed')
+	}
 	// if salt was zeros length bytes, it would be set to .hash_length zeros-bytes instead.
 	// Otherwise, use the provided salt bytes as is.
 	new_salt := if salt.len == 0 {
