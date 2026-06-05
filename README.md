@@ -16,3 +16,8 @@ construct, ie, SHAKE128 and SHAKE256, that was availables on the standard librar
 This construct was commonly was not recommended, and its availables as experimental things.
 So, use with care. For this type of XOF digest, the minimum and maximum size of internal 
 digest output was limited to 16 and 4096 bytes sizes respectively.
+
+## Install
+```bash
+$v install blackshirt.hkdf
+```
